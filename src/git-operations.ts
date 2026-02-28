@@ -8,6 +8,7 @@
 
 import { execFile, type ExecFileOptions } from 'node:child_process';
 import { promisify } from 'node:util';
+import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 
@@ -142,6 +143,75 @@ export async function isGitRepository(cwd?: string): Promise<boolean> {
 export async function getSessionsDir(cwd?: string): Promise<string> {
   const gitDir = await getGitDir(cwd);
   return path.resolve(cwd ?? process.cwd(), gitDir, 'entire-sessions');
+}
+
+// ============================================================================
+// Session Repository
+// ============================================================================
+
+/**
+ * Initialize a separate git repository for session/checkpoint storage.
+ * Creates the repo if it doesn't already exist.
+ * Returns the absolute path to the initialized repo.
+ */
+export async function initSessionRepo(repoPath: string): Promise<string> {
+  const absPath = path.resolve(repoPath);
+  try {
+    await fs.promises.access(path.join(absPath, '.git'));
+    // Already initialized
+  } catch {
+    await fs.promises.mkdir(absPath, { recursive: true });
+    await execFileAsync('git', ['init'], {
+      cwd: absPath,
+      timeout: 30000,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    });
+    // Create an initial empty commit so refs work properly
+    await execFileAsync('git', ['commit', '--allow-empty', '-m', 'Initialize session repository'], {
+      cwd: absPath,
+      timeout: 30000,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_AUTHOR_NAME: 'Entire',
+        GIT_AUTHOR_EMAIL: 'entire@localhost',
+        GIT_COMMITTER_NAME: 'Entire',
+        GIT_COMMITTER_EMAIL: 'entire@localhost',
+      },
+    });
+  }
+  return absPath;
+}
+
+/**
+ * Resolve the session repo path to an absolute path (if configured).
+ * If the path is relative, it's resolved relative to the project root.
+ */
+export function resolveSessionRepoPath(sessionRepoPath: string, projectRoot: string): string {
+  return path.resolve(projectRoot, sessionRepoPath);
+}
+
+/**
+ * Derive a stable, human-readable project identifier from the project's worktree root.
+ * This is used to namespace data when multiple projects share a session repo.
+ *
+ * Format: `<dir-name>-<short-hash>` (e.g. "my-project-a1b2c3d4").
+ * The directory name is sanitized to lowercase alphanumeric + hyphens,
+ * and a short hash suffix ensures uniqueness when two projects share
+ * the same directory name at different paths.
+ */
+export function getProjectID(projectRoot: string): string {
+  const absRoot = path.resolve(projectRoot);
+  const dirName = path.basename(absRoot);
+  // Sanitize: lowercase, replace non-alphanumeric with hyphens, collapse/trim hyphens
+  const sanitized = dirName
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  const shortHash = crypto.createHash('sha256').update(absRoot).digest('hex').slice(0, 8);
+  const prefix = sanitized || 'project';
+  return `${prefix}-${shortHash}`;
 }
 
 // ============================================================================

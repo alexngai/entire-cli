@@ -97,7 +97,28 @@ export interface CheckpointStore {
 // Git-Based Checkpoint Store
 // ============================================================================
 
-export function createCheckpointStore(cwd?: string): CheckpointStore {
+/**
+ * Create a checkpoint store.
+ *
+ * @param cwd - The project working directory (used for shadow branches / temporary checkpoints)
+ * @param sessionRepoCwd - Optional separate repo directory for committed checkpoints.
+ *   When provided, the `entire/checkpoints/v1` branch and its data are stored
+ *   in this repo instead of the project repo. Shadow branches remain in the
+ *   project repo since they reference the project's git objects.
+ * @param checkpointsBranch - Optional override for the checkpoints branch name.
+ *   Defaults to `entire/checkpoints/v1`. When multiple projects share a session
+ *   repo, each project uses a unique branch like `entire/checkpoints/v1/<projectID>`.
+ */
+export function createCheckpointStore(
+  cwd?: string,
+  sessionRepoCwd?: string,
+  checkpointsBranch?: string,
+): CheckpointStore {
+  /** Directory for committed checkpoint operations (separate repo or project repo) */
+  const committedCwd = sessionRepoCwd ?? cwd;
+  /** Branch name for committed checkpoints */
+  const cpBranch = checkpointsBranch ?? CHECKPOINTS_BRANCH;
+
   function getShadowBranchName(baseCommit: string, worktreeID?: string): string {
     const shortHash = baseCommit.slice(0, SHADOW_BRANCH_HASH_LENGTH);
     if (worktreeID) {
@@ -231,16 +252,19 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
 
     async writeCommitted(opts: WriteCommittedOptions): Promise<void> {
       const checkpointPath = checkpointIDPath(opts.checkpointID);
-      const branchRef = `refs/heads/${CHECKPOINTS_BRANCH}`;
+      const branchRef = `refs/heads/${cpBranch}`;
+
+      // Committed checkpoints go to the session repo (or project repo if no session repo)
+      const targetCwd = committedCwd;
 
       // Ensure the metadata branch exists
-      const branchExists = await refExists(branchRef, cwd);
+      const branchExists = await refExists(branchRef, targetCwd);
       let parentHash: string | null = null;
       let baseTree: string | null = null;
 
       if (branchExists) {
-        parentHash = await git(['rev-parse', CHECKPOINTS_BRANCH], { cwd });
-        baseTree = await getTreeHash(CHECKPOINTS_BRANCH, cwd);
+        parentHash = await git(['rev-parse', cpBranch], { cwd: targetCwd });
+        baseTree = await getTreeHash(cpBranch, targetCwd);
       }
 
       // Build session directory content
@@ -266,11 +290,11 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
         initialAttribution: opts.initialAttribution,
       };
 
-      // Create blob objects
-      const metadataBlob = await hashObject(JSON.stringify(metadata, null, 2), cwd);
-      const transcriptBlob = await hashObject(opts.transcript, cwd);
-      const promptBlob = await hashObject(opts.prompts.join('\n---\n'), cwd);
-      const contextBlob = await hashObject(opts.context, cwd);
+      // Create blob objects in the target repo
+      const metadataBlob = await hashObject(JSON.stringify(metadata, null, 2), targetCwd);
+      const transcriptBlob = await hashObject(opts.transcript, targetCwd);
+      const promptBlob = await hashObject(opts.prompts.join('\n---\n'), targetCwd);
+      const contextBlob = await hashObject(opts.context, targetCwd);
 
       // Build session subtree: <sessionIndex>/
       const sessionTree = await mktree(
@@ -280,7 +304,7 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
           { mode: '100644', type: 'blob', hash: promptBlob, name: 'prompt.txt' },
           { mode: '100644', type: 'blob', hash: contextBlob, name: 'context.md' },
         ],
-        cwd,
+        targetCwd,
       );
 
       // Build checkpoint summary
@@ -302,7 +326,7 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
         tokenUsage: opts.tokenUsage,
       };
 
-      const summaryBlob = await hashObject(JSON.stringify(summary, null, 2), cwd);
+      const summaryBlob = await hashObject(JSON.stringify(summary, null, 2), targetCwd);
 
       // Build checkpoint tree: <id[:2]>/<id[2:]>/
       const checkpointTree = await mktree(
@@ -310,7 +334,7 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
           { mode: '100644', type: 'blob', hash: summaryBlob, name: 'metadata.json' },
           { mode: '040000', type: 'tree', hash: sessionTree, name: sessionIndex },
         ],
-        cwd,
+        targetCwd,
       );
 
       // Now we need to merge this into the existing tree on the branch
@@ -324,11 +348,7 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
 
       if (baseTree) {
         // Read existing shard if present
-        const existingShardEntries = await lsTree(
-          `${CHECKPOINTS_BRANCH}:${shardDir}`,
-          undefined,
-          cwd,
-        );
+        const existingShardEntries = await lsTree(`${cpBranch}:${shardDir}`, undefined, targetCwd);
         if (existingShardEntries.length > 0) {
           shardSubtreeEntries = existingShardEntries.filter((e) => e.name !== checkpointDir);
         }
@@ -340,39 +360,39 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
         name: checkpointDir,
       });
 
-      const shardTree = await mktree(shardSubtreeEntries, cwd);
+      const shardTree = await mktree(shardSubtreeEntries, targetCwd);
 
       // Build root tree
       let rootEntries: Array<{ mode: string; type: string; hash: string; name: string }> = [];
 
       if (baseTree) {
-        const existingRoot = await lsTree(CHECKPOINTS_BRANCH, undefined, cwd);
+        const existingRoot = await lsTree(cpBranch, undefined, targetCwd);
         rootEntries = existingRoot.filter((e) => e.name !== shardDir);
       }
       rootEntries.push({ mode: '040000', type: 'tree', hash: shardTree, name: shardDir });
 
-      const rootTree = await mktree(rootEntries, cwd);
+      const rootTree = await mktree(rootEntries, targetCwd);
 
       // Create commit
-      const author = await getGitAuthor(cwd);
+      const author = await getGitAuthor(targetCwd);
       const commitMessage = `Entire-Checkpoint: ${opts.checkpointID}\n\nSession: ${opts.sessionID}`;
-      const commitHash = await commitTree(rootTree, parentHash, commitMessage, author, cwd);
+      const commitHash = await commitTree(rootTree, parentHash, commitMessage, author, targetCwd);
 
       // Update branch ref
       if (branchExists) {
-        await updateRef(CHECKPOINTS_BRANCH, commitHash, cwd);
+        await updateRef(cpBranch, commitHash, targetCwd);
       } else {
-        await git(['branch', CHECKPOINTS_BRANCH, commitHash], { cwd });
+        await git(['branch', cpBranch, commitHash], { cwd: targetCwd });
       }
     },
 
     async readCommitted(checkpointID: CheckpointID): Promise<CheckpointSummary | null> {
-      const exists = await refExists(`refs/heads/${CHECKPOINTS_BRANCH}`, cwd);
+      const exists = await refExists(`refs/heads/${cpBranch}`, committedCwd);
       if (!exists) return null;
 
       const checkpointPath = checkpointIDPath(checkpointID);
       try {
-        const content = await showFile(CHECKPOINTS_BRANCH, `${checkpointPath}/metadata.json`, cwd);
+        const content = await showFile(cpBranch, `${checkpointPath}/metadata.json`, committedCwd);
         return JSON.parse(content) as CheckpointSummary;
       } catch {
         return null;
@@ -393,10 +413,10 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
 
       try {
         const [metadataStr, transcript, prompts, context] = await Promise.all([
-          showFile(CHECKPOINTS_BRANCH, `${sessionPath}/metadata.json`, cwd),
-          showFile(CHECKPOINTS_BRANCH, `${sessionPath}/full.jsonl`, cwd),
-          showFile(CHECKPOINTS_BRANCH, `${sessionPath}/prompt.txt`, cwd),
-          showFile(CHECKPOINTS_BRANCH, `${sessionPath}/context.md`, cwd),
+          showFile(cpBranch, `${sessionPath}/metadata.json`, committedCwd),
+          showFile(cpBranch, `${sessionPath}/full.jsonl`, committedCwd),
+          showFile(cpBranch, `${sessionPath}/prompt.txt`, committedCwd),
+          showFile(cpBranch, `${sessionPath}/context.md`, committedCwd),
         ]);
 
         return {
@@ -411,11 +431,11 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
     },
 
     async listCommitted(limit = 20): Promise<CheckpointSummary[]> {
-      const exists = await refExists(`refs/heads/${CHECKPOINTS_BRANCH}`, cwd);
+      const exists = await refExists(`refs/heads/${cpBranch}`, committedCwd);
       if (!exists) return [];
 
       // Get recent commits on the metadata branch
-      const logOutput = await log(CHECKPOINTS_BRANCH, { maxCount: limit, format: '%H %s' }, cwd);
+      const logOutput = await log(cpBranch, { maxCount: limit, format: '%H %s' }, committedCwd);
 
       if (!logOutput) return [];
 
