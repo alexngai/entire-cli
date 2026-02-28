@@ -11,7 +11,11 @@ import { EventType, addTokenUsage, emptyToolUsageStats } from '../types.js';
 import type { SessionStore } from '../store/session-store.js';
 import type { CheckpointStore } from '../store/checkpoint-store.js';
 import type { Agent } from '../agent/types.js';
-import { hasTranscriptAnalyzer, hasTokenCalculator } from '../agent/types.js';
+import {
+  hasTranscriptAnalyzer,
+  hasTokenCalculator,
+  hasToolUsageExtractor,
+} from '../agent/types.js';
 import { getHead, getCurrentBranch, getUntrackedFiles } from '../git-operations.js';
 
 // ============================================================================
@@ -59,12 +63,6 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
           break;
         case EventType.SubagentEnd:
           await handleSubagentEnd(agent, event);
-          break;
-        case EventType.ToolUse:
-          await handleToolUse(event);
-          break;
-        case EventType.SkillInvoke:
-          await handleSkillInvoke(event);
           break;
       }
     },
@@ -174,6 +172,17 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
       }
     }
 
+    // Extract tool usage from transcript (post-process, no runtime overhead)
+    if (hasToolUsageExtractor(agent) && state.transcriptPath) {
+      try {
+        const transcript = await agent.readTranscript(state.transcriptPath);
+        const turnUsage = agent.extractToolUsage(transcript, state.checkpointTranscriptStart);
+        state.toolUsage = mergeToolUsage(state.toolUsage, turnUsage);
+      } catch {
+        // Ignore extraction errors
+      }
+    }
+
     // Transition to idle
     state.phase = 'idle';
     await sessionStore.save(state);
@@ -244,45 +253,6 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
   }
 
   // ==========================================================================
-  // Tool & Skill Usage Handlers
-  // ==========================================================================
-
-  async function handleToolUse(event: Event): Promise<void> {
-    const state = await sessionStore.load(event.sessionID);
-    if (!state) return;
-
-    state.lastInteractionTime = new Date().toISOString();
-
-    const usage = ensureToolUsage(state);
-    const toolName = event.toolName ?? 'unknown';
-    usage.toolCounts[toolName] = (usage.toolCounts[toolName] ?? 0) + 1;
-    usage.totalToolUses++;
-
-    await sessionStore.save(state);
-  }
-
-  async function handleSkillInvoke(event: Event): Promise<void> {
-    const state = await sessionStore.load(event.sessionID);
-    if (!state) return;
-
-    state.lastInteractionTime = new Date().toISOString();
-
-    const usage = ensureToolUsage(state);
-    usage.skillUses.push({
-      skillName: event.skillName ?? '',
-      timestamp: event.timestamp.toISOString(),
-      args: event.skillArgs,
-    });
-
-    // Also count as a tool use (Skill tool)
-    const toolName = event.toolName ?? 'Skill';
-    usage.toolCounts[toolName] = (usage.toolCounts[toolName] ?? 0) + 1;
-    usage.totalToolUses++;
-
-    await sessionStore.save(state);
-  }
-
-  // ==========================================================================
   // Helpers
   // ==========================================================================
 
@@ -292,4 +262,27 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
     }
     return state.toolUsage;
   }
+}
+
+/**
+ * Merge new tool usage stats into existing accumulated stats.
+ * Tool counts and totals are additive; skill/task lists are appended.
+ */
+function mergeToolUsage(
+  existing: ToolUsageStats | undefined,
+  incoming: ToolUsageStats,
+): ToolUsageStats {
+  if (!existing) return incoming;
+
+  const merged = { ...existing };
+  merged.totalToolUses += incoming.totalToolUses;
+  merged.toolCounts = { ...existing.toolCounts };
+  for (const [tool, count] of Object.entries(incoming.toolCounts)) {
+    merged.toolCounts[tool] = (merged.toolCounts[tool] ?? 0) + count;
+  }
+  merged.skillUses = [...existing.skillUses, ...incoming.skillUses];
+  // Don't merge taskSummaries here — those come from SubagentStart/End hooks
+  merged.taskSummaries = existing.taskSummaries;
+
+  return merged;
 }

@@ -1,20 +1,20 @@
 /**
  * Tests for Tool Usage Tracking
  *
- * Tests the expanded usage tracking system including:
+ * Tests the transcript-based usage tracking system including:
  * - ToolUsageStats type helpers
- * - Claude Code agent hook event parsing for tool use / skill invoke
- * - Transcript-based tool usage extraction
- * - Lifecycle handler processing of new event types
+ * - Transcript-based tool usage extraction (extractToolUsageFromTranscript)
+ * - Agent-level ToolUsageExtractor (extractToolUsage from Buffer)
+ * - Existing hook events remain unaffected
  */
 
 import { describe, it, expect } from 'vitest';
 import { emptyToolUsageStats, EventType } from '../types.js';
 import {
   extractToolUsageFromTranscript,
+  createClaudeCodeAgent,
   type TranscriptLine,
 } from '../agent/agents/claude-code.js';
-import { createClaudeCodeAgent } from '../agent/agents/claude-code.js';
 
 describe('Tool Usage Tracking', () => {
   describe('emptyToolUsageStats', () => {
@@ -27,91 +27,8 @@ describe('Tool Usage Tracking', () => {
     });
   });
 
-  describe('Claude Code Agent - parseHookEvent', () => {
+  describe('Claude Code Agent - existing hooks unaffected', () => {
     const agent = createClaudeCodeAgent();
-
-    it('should parse post-tool-use as ToolUse event', () => {
-      const stdin = JSON.stringify({
-        session_id: 'test-session',
-        transcript_path: '/tmp/transcript.jsonl',
-        tool_name: 'Edit',
-        tool_use_id: 'tu_123',
-        tool_input: { file_path: '/foo/bar.ts', old_string: 'a', new_string: 'b' },
-      });
-
-      const event = agent.parseHookEvent('post-tool-use', stdin);
-      expect(event).not.toBeNull();
-      expect(event!.type).toBe(EventType.ToolUse);
-      expect(event!.toolName).toBe('Edit');
-      expect(event!.sessionID).toBe('test-session');
-      expect(event!.toolUseID).toBe('tu_123');
-    });
-
-    it('should parse Skill tool use as SkillInvoke event', () => {
-      const stdin = JSON.stringify({
-        session_id: 'test-session',
-        transcript_path: '/tmp/transcript.jsonl',
-        tool_name: 'Skill',
-        tool_use_id: 'tu_456',
-        tool_input: { skill: 'commit', args: '-m "fix bug"' },
-      });
-
-      const event = agent.parseHookEvent('post-tool-use', stdin);
-      expect(event).not.toBeNull();
-      expect(event!.type).toBe(EventType.SkillInvoke);
-      expect(event!.toolName).toBe('Skill');
-      expect(event!.skillName).toBe('commit');
-      expect(event!.skillArgs).toBe('-m "fix bug"');
-    });
-
-    it('should parse Skill tool without args', () => {
-      const stdin = JSON.stringify({
-        session_id: 'test-session',
-        transcript_path: '/tmp/transcript.jsonl',
-        tool_name: 'Skill',
-        tool_use_id: 'tu_789',
-        tool_input: { skill: 'review-pr' },
-      });
-
-      const event = agent.parseHookEvent('post-tool-use', stdin);
-      expect(event).not.toBeNull();
-      expect(event!.type).toBe(EventType.SkillInvoke);
-      expect(event!.skillName).toBe('review-pr');
-      expect(event!.skillArgs).toBeUndefined();
-    });
-
-    it('should handle various tool names', () => {
-      const tools = [
-        'Read',
-        'Write',
-        'Edit',
-        'Bash',
-        'Grep',
-        'Glob',
-        'WebFetch',
-        'TodoWrite',
-        'NotebookEdit',
-      ];
-
-      for (const toolName of tools) {
-        const stdin = JSON.stringify({
-          session_id: 'test-session',
-          transcript_path: '/tmp/t.jsonl',
-          tool_name: toolName,
-          tool_use_id: 'tu_abc',
-        });
-
-        const event = agent.parseHookEvent('post-tool-use', stdin);
-        expect(event).not.toBeNull();
-        expect(event!.type).toBe(EventType.ToolUse);
-        expect(event!.toolName).toBe(toolName);
-      }
-    });
-
-    it('should return null for invalid JSON', () => {
-      const event = agent.parseHookEvent('post-tool-use', 'not json');
-      expect(event).toBeNull();
-    });
 
     it('should still parse existing hook events correctly', () => {
       const sessionStart = agent.parseHookEvent(
@@ -131,6 +48,66 @@ describe('Tool Usage Tracking', () => {
         JSON.stringify({ session_id: 's1', transcript_path: '/t.jsonl' }),
       );
       expect(turnEnd?.type).toBe(EventType.TurnEnd);
+    });
+
+    it('should return null for unknown hook names', () => {
+      const event = agent.parseHookEvent(
+        'post-tool-use',
+        JSON.stringify({ session_id: 's1', tool_name: 'Edit' }),
+      );
+      expect(event).toBeNull();
+    });
+  });
+
+  describe('Claude Code Agent - extractToolUsage (ToolUsageExtractor)', () => {
+    const agent = createClaudeCodeAgent();
+
+    it('should extract tool usage from JSONL buffer', () => {
+      const lines = [
+        JSON.stringify({
+          type: 'assistant',
+          message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/a.ts' } }] },
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          message: { content: [{ type: 'tool_use', name: 'Edit', input: { file_path: '/a.ts' } }] },
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/b.ts' } }] },
+        }),
+      ];
+      const buf = Buffer.from(lines.join('\n'));
+
+      const usage = agent.extractToolUsage(buf, 0);
+      expect(usage.totalToolUses).toBe(3);
+      expect(usage.toolCounts['Read']).toBe(2);
+      expect(usage.toolCounts['Edit']).toBe(1);
+    });
+
+    it('should respect fromOffset', () => {
+      const lines = [
+        JSON.stringify({
+          type: 'assistant',
+          message: { content: [{ type: 'tool_use', name: 'Read', input: {} }] },
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          message: { content: [{ type: 'tool_use', name: 'Edit', input: {} }] },
+        }),
+      ];
+      const buf = Buffer.from(lines.join('\n'));
+
+      // Skip first line
+      const usage = agent.extractToolUsage(buf, 1);
+      expect(usage.totalToolUses).toBe(1);
+      expect(usage.toolCounts['Edit']).toBe(1);
+      expect(usage.toolCounts['Read']).toBeUndefined();
+    });
+
+    it('should return empty stats for empty buffer', () => {
+      const usage = agent.extractToolUsage(Buffer.from(''), 0);
+      expect(usage.totalToolUses).toBe(0);
     });
   });
 

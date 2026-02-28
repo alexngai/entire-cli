@@ -29,6 +29,7 @@ import type {
   TranscriptChunker,
   TranscriptPreparer,
   SubagentAwareExtractor,
+  ToolUsageExtractor,
 } from '../types.js';
 import { registerAgent } from '../registry.js';
 
@@ -47,7 +48,6 @@ const HOOK_NAMES = [
   'pre-task',
   'post-task',
   'post-todo',
-  'post-tool-use',
 ] as const;
 
 /** Tools that modify files (detected in transcript) */
@@ -128,7 +128,8 @@ class ClaudeCodeAgent
     TokenCalculator,
     TranscriptChunker,
     TranscriptPreparer,
-    SubagentAwareExtractor
+    SubagentAwareExtractor,
+    ToolUsageExtractor
 {
   readonly name = AGENT_NAMES.CLAUDE_CODE;
   readonly type = AGENT_TYPES.CLAUDE_CODE;
@@ -243,41 +244,6 @@ class ClaudeCodeAgent
             timestamp: new Date(),
           };
 
-        case 'post-tool-use': {
-          const toolName = String(data.tool_name ?? data.toolName ?? '');
-          const sessionID = String(data.session_id ?? data.sessionID ?? '');
-          const sessionRef = String(data.transcript_path ?? data.transcriptPath ?? '');
-          const toolUseID = String(data.tool_use_id ?? data.toolUseID ?? '');
-          const toolInput = data.tool_input ?? data.toolInput;
-
-          // Detect Skill tool invocations → emit SkillInvoke event
-          if (toolName === 'Skill') {
-            const input = toolInput as Record<string, unknown> | undefined;
-            return {
-              type: EventType.SkillInvoke,
-              sessionID,
-              sessionRef,
-              toolUseID,
-              toolName,
-              toolInput,
-              skillName: String(input?.skill ?? ''),
-              skillArgs: input?.args ? String(input.args) : undefined,
-              timestamp: new Date(),
-            };
-          }
-
-          // Generic tool use event
-          return {
-            type: EventType.ToolUse,
-            sessionID,
-            sessionRef,
-            toolUseID,
-            toolName,
-            toolInput,
-            timestamp: new Date(),
-          };
-        }
-
         default:
           return null;
       }
@@ -323,12 +289,6 @@ class ClaudeCodeAgent
       { settingsKey: 'PostToolUse', hookName: 'post-task', matcher: 'Task' },
       { settingsKey: 'PostToolUse', hookName: 'post-todo', matcher: 'TodoWrite' },
     ];
-
-    // Wildcard tool use hook (tracks all tool invocations)
-    const toolTrackingMappings: Array<{
-      settingsKey: keyof NonNullable<ClaudeSettings['hooks']>;
-      hookName: string;
-    }> = [{ settingsKey: 'PostToolUse', hookName: 'post-tool-use' }];
 
     for (const { settingsKey, hookName } of hookMappings) {
       const existing = settings.hooks[settingsKey] ?? [];
@@ -380,43 +340,6 @@ class ClaudeCodeAgent
         const matchers = settings.hooks[settingsKey] ?? [];
         matchers.push({
           matcher,
-          hooks: [
-            {
-              type: 'command',
-              command: `entire hooks claude-code ${hookName}`,
-            },
-          ],
-        });
-        settings.hooks[settingsKey] = matchers;
-        installed++;
-      }
-    }
-
-    // Install wildcard tool tracking hooks (empty matcher = all tools)
-    for (const { settingsKey, hookName } of toolTrackingMappings) {
-      const existing = settings.hooks[settingsKey] ?? [];
-
-      if (force) {
-        const filtered = existing.filter(
-          (m) =>
-            !(
-              m.matcher === '' &&
-              m.hooks.some((h) => h.command.includes(`entire hooks claude-code ${hookName}`))
-            ),
-        );
-        settings.hooks[settingsKey] = filtered;
-      }
-
-      const hasEntireHook = (settings.hooks[settingsKey] ?? []).some(
-        (m) =>
-          m.matcher === '' &&
-          m.hooks.some((h) => h.command.includes(`entire hooks claude-code ${hookName}`)),
-      );
-
-      if (!hasEntireHook) {
-        const matchers = settings.hooks[settingsKey] ?? [];
-        matchers.push({
-          matcher: '',
           hooks: [
             {
               type: 'command',
@@ -633,6 +556,29 @@ class ClaudeCodeAgent
     }
 
     return usage;
+  }
+
+  // ===========================================================================
+  // ToolUsageExtractor
+  // ===========================================================================
+
+  extractToolUsage(transcriptData: Buffer, fromOffset: number): ToolUsageStats {
+    if (transcriptData.length === 0) return emptyToolUsageStats();
+
+    const content = transcriptData.toString('utf-8');
+    const allLines = content.split('\n').filter(Boolean);
+    const sliced = allLines.slice(fromOffset);
+    const parsed = sliced
+      .map((line) => {
+        try {
+          return JSON.parse(line) as TranscriptLine;
+        } catch {
+          return null;
+        }
+      })
+      .filter((l): l is TranscriptLine => l !== null);
+
+    return extractToolUsageFromTranscript(parsed);
   }
 
   // ===========================================================================

@@ -6,7 +6,14 @@
  * interfaces to participate in the Entire session tracking lifecycle.
  */
 
-import type { AgentName, AgentType, HookInput, Event, TokenUsage } from '../types.js';
+import type {
+  AgentName,
+  AgentType,
+  HookInput,
+  Event,
+  TokenUsage,
+  ToolUsageStats,
+} from '../types.js';
 
 // ============================================================================
 // Core Agent Interface
@@ -146,6 +153,15 @@ export interface SubagentAwareExtractor {
 }
 
 /**
+ * Agent supports extracting tool/skill usage statistics from transcripts.
+ * This is a post-process analysis — no runtime overhead during agent execution.
+ */
+export interface ToolUsageExtractor {
+  /** Extract tool usage stats from a transcript segment */
+  extractToolUsage(transcriptData: Buffer, fromOffset: number): ToolUsageStats;
+}
+
+/**
  * Agent supports transcript chunking for storage
  */
 export interface TranscriptChunker {
@@ -209,6 +225,13 @@ export function hasSubagentAwareExtractor(agent: Agent): agent is Agent & Subage
     typeof (agent as unknown as SubagentAwareExtractor).extractAllModifiedFiles === 'function' &&
     'calculateTotalTokenUsage' in agent &&
     typeof (agent as unknown as SubagentAwareExtractor).calculateTotalTokenUsage === 'function'
+  );
+}
+
+export function hasToolUsageExtractor(agent: Agent): agent is Agent & ToolUsageExtractor {
+  return (
+    'extractToolUsage' in agent &&
+    typeof (agent as unknown as ToolUsageExtractor).extractToolUsage === 'function'
   );
 }
 

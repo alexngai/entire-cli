@@ -70,8 +70,6 @@ export enum EventType {
   SessionEnd = 5,
   SubagentStart = 6,
   SubagentEnd = 7,
-  ToolUse = 8,
-  SkillInvoke = 9,
 }
 
 export interface Event {
@@ -88,12 +86,6 @@ export interface Event {
   taskDescription?: string;
   responseMessage?: string;
   metadata?: Record<string, string>;
-  /** Tool name for ToolUse events */
-  toolName?: string;
-  /** Skill name for SkillInvoke events */
-  skillName?: string;
-  /** Skill args for SkillInvoke events */
-  skillArgs?: string;
 }
 
 // ============================================================================

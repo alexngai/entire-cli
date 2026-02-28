@@ -169,6 +169,7 @@ export type {
   TranscriptChunker,
   TranscriptPreparer,
   SubagentAwareExtractor,
+  ToolUsageExtractor,
   SessionChangeEvent,
 } from './agent/types.js';
 
@@ -180,6 +181,7 @@ export {
   hasTranscriptChunker,
   hasTranscriptPreparer,
   hasSubagentAwareExtractor,
+  hasToolUsageExtractor,
 } from './agent/types.js';
 
 export {
