@@ -1,7 +1,7 @@
 /**
- * Entire Core Types
+ * Sessionlog Core Types
  *
- * Core type definitions for the Entire session tracking system.
+ * Core type definitions for the Sessionlog session tracking system.
  * This module is designed with clean boundaries for future extraction
  * into a standalone package.
  */
@@ -377,7 +377,7 @@ export interface SessionChange {
 // Settings
 // ============================================================================
 
-export interface EntireSettings {
+export interface SessionlogSettings {
   enabled: boolean;
   strategy: string;
   logLevel?: string;
@@ -391,7 +391,7 @@ export interface EntireSettings {
   sessionRepoPath?: string;
 }
 
-export const DEFAULT_SETTINGS: EntireSettings = {
+export const DEFAULT_SETTINGS: SessionlogSettings = {
   enabled: false,
   strategy: 'manual-commit',
   logLevel: 'warn',
@@ -403,14 +403,14 @@ export const DEFAULT_SETTINGS: EntireSettings = {
 // Constants
 // ============================================================================
 
-export const ENTIRE_DIR = '.entire';
-export const ENTIRE_TMP_DIR = '.entire/tmp';
-export const ENTIRE_METADATA_DIR = '.entire/metadata';
-export const ENTIRE_SETTINGS_FILE = '.entire/settings.json';
-export const ENTIRE_SETTINGS_LOCAL_FILE = '.entire/settings.local.json';
-export const CHECKPOINTS_BRANCH = 'entire/checkpoints/v1';
-export const SHADOW_BRANCH_PREFIX = 'entire/';
+export const SESSIONLOG_DIR = '.sessionlog';
+export const SESSIONLOG_TMP_DIR = '.sessionlog/tmp';
+export const SESSIONLOG_METADATA_DIR = '.sessionlog/metadata';
+export const SESSIONLOG_SETTINGS_FILE = '.sessionlog/settings.json';
+export const SESSIONLOG_SETTINGS_LOCAL_FILE = '.sessionlog/settings.local.json';
+export const CHECKPOINTS_BRANCH = 'sessionlog/checkpoints/v1';
+export const SHADOW_BRANCH_PREFIX = 'sessionlog/';
 export const SHADOW_BRANCH_HASH_LENGTH = 7;
-export const SESSION_DIR_NAME = 'entire-sessions';
+export const SESSION_DIR_NAME = 'sessionlog-sessions';
 export const MAX_CHUNK_SIZE = 50 * 1024 * 1024; // 50MB
 export const STALE_SESSION_DAYS = 7;
