@@ -50,6 +50,9 @@ export type {
   LearningsSummary,
   CodeLearning,
   InitialAttribution,
+  ToolUsageStats,
+  SkillUse,
+  TaskSummary,
   RewindPoint,
   WriteTemporaryOptions,
   WriteTemporaryResult,
@@ -81,6 +84,7 @@ export {
   checkpointIDPath,
   emptyTokenUsage,
   addTokenUsage,
+  emptyToolUsageStats,
 } from './types.js';
 
 // =============================================================================
@@ -200,6 +204,7 @@ export {
   extractModifiedFiles,
   extractLastUserPrompt,
   extractSpawnedAgentIDs,
+  extractToolUsageFromTranscript,
   type TranscriptLine,
   type AssistantContent,
 } from './agent/agents/claude-code.js';

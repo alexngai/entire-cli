@@ -6,8 +6,8 @@
  */
 
 import * as crypto from 'node:crypto';
-import type { Event, SessionState } from '../types.js';
-import { EventType, addTokenUsage } from '../types.js';
+import type { Event, SessionState, ToolUsageStats } from '../types.js';
+import { EventType, addTokenUsage, emptyToolUsageStats } from '../types.js';
 import type { SessionStore } from '../store/session-store.js';
 import type { CheckpointStore } from '../store/checkpoint-store.js';
 import type { Agent } from '../agent/types.js';
@@ -59,6 +59,12 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
           break;
         case EventType.SubagentEnd:
           await handleSubagentEnd(agent, event);
+          break;
+        case EventType.ToolUse:
+          await handleToolUse(event);
+          break;
+        case EventType.SkillInvoke:
+          await handleSkillInvoke(event);
           break;
       }
     },
@@ -206,6 +212,17 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
     if (!state) return;
 
     state.lastInteractionTime = new Date().toISOString();
+
+    // Record task summary
+    const usage = ensureToolUsage(state);
+    const taskInput = event.toolInput as Record<string, unknown> | undefined;
+    usage.taskSummaries.push({
+      toolUseID: event.toolUseID ?? '',
+      description: taskInput?.description ? String(taskInput.description) : event.taskDescription,
+      subagentType: taskInput?.subagent_type ? String(taskInput.subagent_type) : event.subagentType,
+      startedAt: event.timestamp.toISOString(),
+    });
+
     await sessionStore.save(state);
   }
 
@@ -214,6 +231,65 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
     if (!state) return;
 
     state.lastInteractionTime = new Date().toISOString();
+
+    // Update the matching task summary with end time
+    if (state.toolUsage && event.toolUseID) {
+      const task = state.toolUsage.taskSummaries.find((t) => t.toolUseID === event.toolUseID);
+      if (task) {
+        task.endedAt = event.timestamp.toISOString();
+      }
+    }
+
     await sessionStore.save(state);
+  }
+
+  // ==========================================================================
+  // Tool & Skill Usage Handlers
+  // ==========================================================================
+
+  async function handleToolUse(event: Event): Promise<void> {
+    const state = await sessionStore.load(event.sessionID);
+    if (!state) return;
+
+    state.lastInteractionTime = new Date().toISOString();
+
+    const usage = ensureToolUsage(state);
+    const toolName = event.toolName ?? 'unknown';
+    usage.toolCounts[toolName] = (usage.toolCounts[toolName] ?? 0) + 1;
+    usage.totalToolUses++;
+
+    await sessionStore.save(state);
+  }
+
+  async function handleSkillInvoke(event: Event): Promise<void> {
+    const state = await sessionStore.load(event.sessionID);
+    if (!state) return;
+
+    state.lastInteractionTime = new Date().toISOString();
+
+    const usage = ensureToolUsage(state);
+    usage.skillUses.push({
+      skillName: event.skillName ?? '',
+      timestamp: event.timestamp.toISOString(),
+      args: event.skillArgs,
+    });
+
+    // Also count as a tool use (Skill tool)
+    const toolName = event.toolName ?? 'Skill';
+    usage.toolCounts[toolName] = (usage.toolCounts[toolName] ?? 0) + 1;
+    usage.totalToolUses++;
+
+    await sessionStore.save(state);
+  }
+
+  // ==========================================================================
+  // Helpers
+  // ==========================================================================
+
+  function ensureToolUsage(state: SessionState): ToolUsageStats {
+    if (!state.toolUsage) {
+      state.toolUsage = emptyToolUsageStats();
+    }
+    return state.toolUsage;
   }
 }

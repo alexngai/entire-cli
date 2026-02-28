@@ -27,6 +27,9 @@ import { isEnabled } from './config.js';
 import { createSessionStore } from './store/session-store.js';
 import { createCheckpointStore } from './store/checkpoint-store.js';
 import { createManualCommitStrategy } from './strategy/manual-commit.js';
+import { createLifecycleHandler } from './hooks/lifecycle.js';
+import { getAgent } from './agent/registry.js';
+import type { HookSupport } from './agent/types.js';
 import { getVersion } from './index.js';
 
 // ============================================================================
@@ -131,6 +134,28 @@ async function cmdStatus(args: string[]): Promise<void> {
         console.log(
           `    Tokens: ${formatTokens(s.tokenUsage.input)} in / ${formatTokens(s.tokenUsage.output)} out`,
         );
+      }
+      if (s.toolUsage && s.toolUsage.totalToolUses > 0) {
+        console.log(`    Tool uses: ${s.toolUsage.totalToolUses}`);
+        // Show top 5 most-used tools
+        const sorted = Object.entries(s.toolUsage.toolCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5);
+        if (sorted.length > 0) {
+          console.log(
+            `    Top tools: ${sorted.map(([name, count]) => `${name}(${count})`).join(', ')}`,
+          );
+        }
+        if (s.toolUsage.skillUses.length > 0) {
+          console.log(
+            `    Skills used: ${s.toolUsage.skillUses.map((su) => su.skillName).join(', ')}`,
+          );
+        }
+        if (s.toolUsage.taskSummaries.length > 0) {
+          const active = s.toolUsage.taskSummaries.filter((t) => !t.endedAt).length;
+          const completed = s.toolUsage.taskSummaries.length - active;
+          console.log(`    Tasks: ${completed} completed${active > 0 ? `, ${active} active` : ''}`);
+        }
       }
     }
   }
@@ -357,6 +382,72 @@ async function cmdHooksGit(args: string[]): Promise<void> {
   }
 }
 
+// ============================================================================
+// Agent Hook Dispatch
+// ============================================================================
+
+/**
+ * Handle `entire hooks <agent-name> <hook-name>`
+ *
+ * This is invoked by agent-specific hooks (e.g., Claude Code hooks in
+ * .claude/settings.json). Reads JSON from stdin, parses it into an Event
+ * via the agent's parseHookEvent, and dispatches through the lifecycle handler.
+ */
+async function cmdHooksAgent(agentName: string, args: string[]): Promise<void> {
+  const hookName = args[0];
+  if (!hookName) return;
+
+  // Bail silently if Entire is not enabled
+  if (!(await isEnabled())) return;
+
+  // Look up the agent
+  const agent = getAgent(agentName);
+  if (!agent) return;
+
+  // Check that agent supports hooks
+  if (!('parseHookEvent' in agent)) return;
+
+  // Read stdin
+  const stdin = await readStdin();
+  if (!stdin) return;
+
+  // Parse the hook event
+  const hookAgent = agent as HookSupport & typeof agent;
+  const event = hookAgent.parseHookEvent(hookName, stdin);
+  if (!event) return;
+
+  // Dispatch through lifecycle
+  const sessionStore = createSessionStore();
+  const checkpointStore = createCheckpointStore();
+  const lifecycle = createLifecycleHandler({ sessionStore, checkpointStore });
+  await lifecycle.dispatch(agent, event);
+}
+
+/**
+ * Read all data from stdin (non-blocking).
+ * Returns empty string if stdin is not piped or has no data.
+ */
+function readStdin(): Promise<string> {
+  return new Promise((resolve) => {
+    // If stdin is a TTY (interactive), don't try to read
+    if (process.stdin.isTTY) {
+      resolve('');
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk));
+    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+    process.stdin.on('error', () => resolve(''));
+
+    // Safety timeout in case stdin hangs
+    setTimeout(() => {
+      process.stdin.removeAllListeners();
+      resolve(chunks.length > 0 ? Buffer.concat(chunks).toString('utf-8') : '');
+    }, 5000);
+  });
+}
+
 async function cmdVersion(): Promise<void> {
   console.log(`entire-cli ${getVersion()}`);
 }
@@ -416,11 +507,16 @@ async function main(): Promise<void> {
       return cmdResume(commandArgs);
     case 'hooks': {
       // `entire hooks git <hook-name> [args...]`
+      // `entire hooks <agent-name> <hook-name>`
       const subcommand = commandArgs[0];
       if (subcommand === 'git') {
         return cmdHooksGit(commandArgs.slice(1));
       }
-      console.error(`Unknown hooks subcommand: ${subcommand}`);
+      // Try as agent name (e.g., "claude-code", "cursor")
+      if (subcommand) {
+        return cmdHooksAgent(subcommand, commandArgs.slice(1));
+      }
+      console.error(`Usage: entire hooks <git|agent-name> <hook-name>`);
       process.exit(1);
       break;
     }

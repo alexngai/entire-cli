@@ -262,6 +262,7 @@ export function createCheckpointStore(cwd?: string): CheckpointStore {
         transcriptIdentifierAtStart: opts.transcriptIdentifierAtStart,
         checkpointTranscriptStart: opts.checkpointTranscriptStart,
         tokenUsage: opts.tokenUsage,
+        toolUsage: opts.toolUsage,
         summary: opts.summary,
         initialAttribution: opts.initialAttribution,
       };

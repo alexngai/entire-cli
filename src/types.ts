@@ -70,6 +70,8 @@ export enum EventType {
   SessionEnd = 5,
   SubagentStart = 6,
   SubagentEnd = 7,
+  ToolUse = 8,
+  SkillInvoke = 9,
 }
 
 export interface Event {
@@ -86,6 +88,12 @@ export interface Event {
   taskDescription?: string;
   responseMessage?: string;
   metadata?: Record<string, string>;
+  /** Tool name for ToolUse events */
+  toolName?: string;
+  /** Skill name for SkillInvoke events */
+  skillName?: string;
+  /** Skill args for SkillInvoke events */
+  skillArgs?: string;
 }
 
 // ============================================================================
@@ -119,6 +127,7 @@ export interface SessionState {
   firstPrompt?: string;
   promptAttributions?: PromptAttribution[];
   pendingPromptAttribution?: PromptAttribution;
+  toolUsage?: ToolUsageStats;
 }
 
 export interface PromptAttribution {
@@ -128,6 +137,46 @@ export interface PromptAttribution {
   humanAdded: number;
   humanModified: number;
   humanRemoved: number;
+}
+
+// ============================================================================
+// Tool & Skill Usage Tracking
+// ============================================================================
+
+/** Aggregated tool/skill usage statistics for a session */
+export interface ToolUsageStats {
+  /** Count of invocations per tool name (e.g., { "Edit": 5, "Bash": 3 }) */
+  toolCounts: Record<string, number>;
+  /** Total tool invocations across all tools */
+  totalToolUses: number;
+  /** Skill/slash-command invocations */
+  skillUses: SkillUse[];
+  /** Task (subagent) summaries with durations */
+  taskSummaries: TaskSummary[];
+}
+
+export interface SkillUse {
+  skillName: string;
+  timestamp: string;
+  args?: string;
+}
+
+export interface TaskSummary {
+  toolUseID: string;
+  description?: string;
+  subagentType?: string;
+  startedAt: string;
+  endedAt?: string;
+  tokenUsage?: TokenUsage;
+}
+
+export function emptyToolUsageStats(): ToolUsageStats {
+  return {
+    toolCounts: {},
+    totalToolUses: 0,
+    skillUses: [],
+    taskSummaries: [],
+  };
 }
 
 // ============================================================================
@@ -215,6 +264,7 @@ export interface CheckpointSummary {
   filesTouched: string[];
   sessions: SessionFilePaths[];
   tokenUsage?: TokenUsage;
+  toolUsage?: ToolUsageStats;
 }
 
 export interface SessionFilePaths {
@@ -241,6 +291,7 @@ export interface CommittedMetadata {
   transcriptIdentifierAtStart?: string;
   checkpointTranscriptStart: number;
   tokenUsage?: TokenUsage;
+  toolUsage?: ToolUsageStats;
   summary?: Summary;
   initialAttribution?: InitialAttribution;
 }
@@ -349,6 +400,7 @@ export interface WriteCommittedOptions {
   transcriptIdentifierAtStart?: string;
   checkpointTranscriptStart: number;
   tokenUsage?: TokenUsage;
+  toolUsage?: ToolUsageStats;
   initialAttribution?: InitialAttribution;
   summary?: Summary;
 }

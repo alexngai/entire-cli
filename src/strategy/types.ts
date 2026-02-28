@@ -5,7 +5,14 @@
  * checkpoint creation, condensation, attribution, and commit hooks.
  */
 
-import type { AgentType, CheckpointID, InitialAttribution, Summary, TokenUsage } from '../types.js';
+import type {
+  AgentType,
+  CheckpointID,
+  InitialAttribution,
+  Summary,
+  TokenUsage,
+  ToolUsageStats,
+} from '../types.js';
 
 // ============================================================================
 // Strategy Constants
@@ -110,6 +117,7 @@ export interface StrategySessionState {
   firstPrompt?: string;
   lastCheckpointID?: CheckpointID;
   tokenUsage?: TokenUsage;
+  toolUsage?: ToolUsageStats;
   transcriptIdentifierAtStart?: string;
   promptAttributions: PromptAttribution[];
   pendingPromptAttribution?: PromptAttribution;
@@ -165,6 +173,7 @@ export interface CondensationResult {
   checkpointsCount: number;
   filesTouched: string[];
   tokenUsage?: TokenUsage;
+  toolUsage?: ToolUsageStats;
   attribution?: InitialAttribution;
   summary?: Summary;
 }

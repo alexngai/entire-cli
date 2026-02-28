@@ -679,6 +679,7 @@ export function createManualCommitStrategy(config: ManualCommitStrategyConfig): 
       transcriptIdentifierAtStart: state.transcriptIdentifierAtStart,
       checkpointTranscriptStart: state.checkpointTranscriptStart,
       tokenUsage: state.tokenUsage,
+      toolUsage: state.toolUsage,
     });
 
     return {

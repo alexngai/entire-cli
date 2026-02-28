@@ -5,7 +5,7 @@
  * and configuration.
  */
 
-import { type EntireSettings, CHECKPOINTS_BRANCH } from '../types.js';
+import { type EntireSettings, type ToolUsageStats, CHECKPOINTS_BRANCH } from '../types.js';
 import {
   isGitRepository,
   getWorktreeRoot,
@@ -60,6 +60,7 @@ export interface SessionStatus {
     input: number;
     output: number;
   };
+  toolUsage?: ToolUsageStats;
 }
 
 // ============================================================================
@@ -119,6 +120,7 @@ export async function status(cwd?: string): Promise<StatusResult> {
           output: s.tokenUsage.outputTokens,
         }
       : undefined,
+    toolUsage: s.toolUsage,
   }));
 
   return {

@@ -16,8 +16,10 @@ import {
   type HookInput,
   type Event,
   type TokenUsage,
+  type ToolUsageStats,
   EventType,
   emptyTokenUsage,
+  emptyToolUsageStats,
 } from '../../types.js';
 import type {
   Agent,
@@ -45,6 +47,7 @@ const HOOK_NAMES = [
   'pre-task',
   'post-task',
   'post-todo',
+  'post-tool-use',
 ] as const;
 
 /** Tools that modify files (detected in transcript) */
@@ -240,6 +243,41 @@ class ClaudeCodeAgent
             timestamp: new Date(),
           };
 
+        case 'post-tool-use': {
+          const toolName = String(data.tool_name ?? data.toolName ?? '');
+          const sessionID = String(data.session_id ?? data.sessionID ?? '');
+          const sessionRef = String(data.transcript_path ?? data.transcriptPath ?? '');
+          const toolUseID = String(data.tool_use_id ?? data.toolUseID ?? '');
+          const toolInput = data.tool_input ?? data.toolInput;
+
+          // Detect Skill tool invocations → emit SkillInvoke event
+          if (toolName === 'Skill') {
+            const input = toolInput as Record<string, unknown> | undefined;
+            return {
+              type: EventType.SkillInvoke,
+              sessionID,
+              sessionRef,
+              toolUseID,
+              toolName,
+              toolInput,
+              skillName: String(input?.skill ?? ''),
+              skillArgs: input?.args ? String(input.args) : undefined,
+              timestamp: new Date(),
+            };
+          }
+
+          // Generic tool use event
+          return {
+            type: EventType.ToolUse,
+            sessionID,
+            sessionRef,
+            toolUseID,
+            toolName,
+            toolInput,
+            timestamp: new Date(),
+          };
+        }
+
         default:
           return null;
       }
@@ -285,6 +323,12 @@ class ClaudeCodeAgent
       { settingsKey: 'PostToolUse', hookName: 'post-task', matcher: 'Task' },
       { settingsKey: 'PostToolUse', hookName: 'post-todo', matcher: 'TodoWrite' },
     ];
+
+    // Wildcard tool use hook (tracks all tool invocations)
+    const toolTrackingMappings: Array<{
+      settingsKey: keyof NonNullable<ClaudeSettings['hooks']>;
+      hookName: string;
+    }> = [{ settingsKey: 'PostToolUse', hookName: 'post-tool-use' }];
 
     for (const { settingsKey, hookName } of hookMappings) {
       const existing = settings.hooks[settingsKey] ?? [];
@@ -336,6 +380,43 @@ class ClaudeCodeAgent
         const matchers = settings.hooks[settingsKey] ?? [];
         matchers.push({
           matcher,
+          hooks: [
+            {
+              type: 'command',
+              command: `entire hooks claude-code ${hookName}`,
+            },
+          ],
+        });
+        settings.hooks[settingsKey] = matchers;
+        installed++;
+      }
+    }
+
+    // Install wildcard tool tracking hooks (empty matcher = all tools)
+    for (const { settingsKey, hookName } of toolTrackingMappings) {
+      const existing = settings.hooks[settingsKey] ?? [];
+
+      if (force) {
+        const filtered = existing.filter(
+          (m) =>
+            !(
+              m.matcher === '' &&
+              m.hooks.some((h) => h.command.includes(`entire hooks claude-code ${hookName}`))
+            ),
+        );
+        settings.hooks[settingsKey] = filtered;
+      }
+
+      const hasEntireHook = (settings.hooks[settingsKey] ?? []).some(
+        (m) =>
+          m.matcher === '' &&
+          m.hooks.some((h) => h.command.includes(`entire hooks claude-code ${hookName}`)),
+      );
+
+      if (!hasEntireHook) {
+        const matchers = settings.hooks[settingsKey] ?? [];
+        matchers.push({
+          matcher: '',
           hooks: [
             {
               type: 'command',
@@ -770,6 +851,53 @@ export function extractLastUserPrompt(lines: TranscriptLine[]): string {
     }
   }
   return '';
+}
+
+/**
+ * Extract tool usage statistics from transcript lines.
+ * This serves as a fallback for sessions that started before hooks were installed,
+ * and can also be used to backfill or validate hook-reported data.
+ */
+export function extractToolUsageFromTranscript(lines: TranscriptLine[]): ToolUsageStats {
+  const usage = emptyToolUsageStats();
+
+  for (const line of lines) {
+    if (line.type !== 'assistant') continue;
+
+    const blocks = extractContentBlocks(line.message);
+    for (const block of blocks) {
+      if (block.type !== 'tool_use' || !block.name) continue;
+
+      const toolName = block.name;
+      usage.toolCounts[toolName] = (usage.toolCounts[toolName] ?? 0) + 1;
+      usage.totalToolUses++;
+
+      // Detect Skill invocations
+      if (toolName === 'Skill') {
+        const input = block.input as Record<string, unknown> | undefined;
+        if (input?.skill) {
+          usage.skillUses.push({
+            skillName: String(input.skill),
+            timestamp: '', // Not available from transcript
+            args: input.args ? String(input.args) : undefined,
+          });
+        }
+      }
+
+      // Detect Task (subagent) invocations
+      if (toolName === 'Task') {
+        const input = block.input as Record<string, unknown> | undefined;
+        usage.taskSummaries.push({
+          toolUseID: block.id ?? '',
+          description: input?.description ? String(input.description) : undefined,
+          subagentType: input?.subagent_type ? String(input.subagent_type) : undefined,
+          startedAt: '', // Not available from transcript
+        });
+      }
+    }
+  }
+
+  return usage;
 }
 
 // ============================================================================
