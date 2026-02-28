@@ -1,12 +1,12 @@
 /**
- * Entire Provider Types
+ * Sessionlog Provider Types
  *
- * These types define the public interface for accessing Entire session
- * and checkpoint data. They are the contract between the Entire module
+ * These types define the public interface for accessing Sessionlog session
+ * and checkpoint data. They are the contract between the Sessionlog module
  * and external consumers (providers, daemon, etc.).
  *
  * This file is the canonical source of truth — external code should
- * import these types from the entire package rather than redefining them.
+ * import these types from the sessionlog package rather than redefining them.
  */
 
 // ============================================================================
@@ -14,9 +14,9 @@
 // ============================================================================
 
 /**
- * Entire session state (from .git/entire-sessions/<id>.json)
+ * Sessionlog session state (from .git/sessionlog-sessions/<id>.json)
  */
-export interface EntireSession {
+export interface SessionlogSession {
   id: string;
   agent: string;
   phase: 'ACTIVE' | 'IDLE' | 'ENDED';
@@ -25,18 +25,18 @@ export interface EntireSession {
   startedAt?: string;
   endedAt?: string;
   checkpoints?: string[];
-  tokenUsage?: EntireTokenUsage;
+  tokenUsage?: SessionlogTokenUsage;
   filesTouched?: string[];
   summary?: string;
 
   /** Skills used during this session (populated by SkillTracker) */
-  skillsUsed?: EntireSkillUsage;
+  skillsUsed?: SessionlogSkillUsage;
 }
 
 /**
  * Skill usage data embedded in session metadata
  */
-export interface EntireSkillUsage {
+export interface SessionlogSkillUsage {
   /** Distinct skill names used */
   skills: string[];
 
@@ -55,9 +55,9 @@ export interface EntireSkillUsage {
 // ============================================================================
 
 /**
- * Entire checkpoint metadata
+ * Sessionlog checkpoint metadata
  */
-export interface EntireCheckpoint {
+export interface SessionlogCheckpoint {
   id: string;
   sessionId?: string;
   commitHash?: string;
@@ -66,7 +66,7 @@ export interface EntireCheckpoint {
   filesModified?: string[];
   filesNew?: string[];
   filesDeleted?: string[];
-  tokenUsage?: EntireTokenUsage;
+  tokenUsage?: SessionlogTokenUsage;
   context?: string;
 }
 
@@ -77,7 +77,7 @@ export interface EntireCheckpoint {
 /**
  * Token usage statistics (provider-facing, simplified)
  */
-export interface EntireTokenUsage {
+export interface SessionlogTokenUsage {
   input?: number;
   output?: number;
   cache?: number;
@@ -88,12 +88,12 @@ export interface EntireTokenUsage {
 // ============================================================================
 
 /**
- * Interface for accessing Entire data (CLI or direct reads)
+ * Interface for accessing Sessionlog data (CLI or direct reads)
  */
-export interface EntireStore {
-  getSession(id: string): Promise<EntireSession | null>;
-  listSessions(): Promise<EntireSession[]>;
-  getCheckpoint(id: string): Promise<EntireCheckpoint | null>;
-  listCheckpoints(): Promise<EntireCheckpoint[]>;
-  search(query: string): Promise<Array<EntireSession | EntireCheckpoint>>;
+export interface SessionlogStore {
+  getSession(id: string): Promise<SessionlogSession | null>;
+  listSessions(): Promise<SessionlogSession[]>;
+  getCheckpoint(id: string): Promise<SessionlogCheckpoint | null>;
+  listCheckpoints(): Promise<SessionlogCheckpoint[]>;
+  search(query: string): Promise<Array<SessionlogSession | SessionlogCheckpoint>>;
 }

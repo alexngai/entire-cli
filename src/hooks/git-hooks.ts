@@ -2,7 +2,7 @@
  * Git Hooks
  *
  * Installation and management of git hooks (prepare-commit-msg,
- * commit-msg, post-commit, pre-push) that integrate Entire into the git workflow.
+ * commit-msg, post-commit, pre-push) that integrate Sessionlog into the git workflow.
  */
 
 import * as fs from 'node:fs';
@@ -13,7 +13,7 @@ import { getGitDir } from '../git-operations.js';
 // Constants
 // ============================================================================
 
-const HOOK_MARKER = '# Entire CLI hook';
+const HOOK_MARKER = '# Sessionlog CLI hook';
 const HOOK_NAMES = ['prepare-commit-msg', 'commit-msg', 'post-commit', 'pre-push'] as const;
 
 export type GitHookName = (typeof HOOK_NAMES)[number];
@@ -23,11 +23,11 @@ export type GitHookName = (typeof HOOK_NAMES)[number];
 // ============================================================================
 
 /**
- * Install git hooks for Entire into a repository
+ * Install git hooks for Sessionlog into a repository
  */
 export async function installGitHooks(
   repoPath: string,
-  entireExecutable = 'entire',
+  sessionlogExecutable = 'sessionlog',
 ): Promise<number> {
   const gitDir = await getGitDir(repoPath);
   const hooksDir = path.resolve(repoPath, gitDir, 'hooks');
@@ -38,7 +38,7 @@ export async function installGitHooks(
 
   for (const hookName of HOOK_NAMES) {
     const hookPath = path.join(hooksDir, hookName);
-    const hookScript = generateHookScript(hookName, entireExecutable);
+    const hookScript = generateHookScript(hookName, sessionlogExecutable);
 
     // Read existing content if any
     let existingContent = '';
@@ -48,7 +48,7 @@ export async function installGitHooks(
       // File doesn't exist
     }
 
-    // Check if Entire hook already installed
+    // Check if Sessionlog hook already installed
     if (existingContent.includes(HOOK_MARKER)) {
       continue;
     }
@@ -72,7 +72,7 @@ export async function installGitHooks(
 }
 
 /**
- * Uninstall git hooks for Entire from a repository
+ * Uninstall git hooks for Sessionlog from a repository
  */
 export async function uninstallGitHooks(repoPath: string): Promise<void> {
   const gitDir = await getGitDir(repoPath);
@@ -84,21 +84,21 @@ export async function uninstallGitHooks(repoPath: string): Promise<void> {
     try {
       const content = await fs.promises.readFile(hookPath, 'utf-8');
 
-      // Remove Entire section
+      // Remove Sessionlog section
       const lines = content.split('\n');
       const filtered: string[] = [];
-      let inEntireSection = false;
+      let inSessionlogSection = false;
 
       for (const line of lines) {
         if (line.includes(HOOK_MARKER)) {
-          inEntireSection = true;
+          inSessionlogSection = true;
           continue;
         }
-        if (inEntireSection && line.trim() === '') {
-          inEntireSection = false;
+        if (inSessionlogSection && line.trim() === '') {
+          inSessionlogSection = false;
           continue;
         }
-        if (!inEntireSection) {
+        if (!inSessionlogSection) {
           filtered.push(line);
         }
       }

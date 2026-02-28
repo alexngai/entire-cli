@@ -1,5 +1,5 @@
 {
-  "name": "entire-cli",
+  "name": "sessionlog",
   "version": "0.0.3",
   "description": "Session tracking and checkpoint management for AI coding agents",
   "type": "module",
@@ -13,7 +13,7 @@
     }
   },
   "bin": {
-    "entire": "./dist/cli.js"
+    "sessionlog": "./dist/cli.js"
   },
   "files": [
     "dist"
@@ -34,7 +34,7 @@
     "prepare": "husky"
   },
   "keywords": [
-    "entire",
+    "sessionlog",
     "git",
     "session-tracking",
     "checkpoints",
@@ -59,6 +59,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alexngai/entire-cli.git"
+    "url": "git+https://github.com/alexngai/sessionlog.git"
   }
 }

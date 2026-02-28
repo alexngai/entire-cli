@@ -1,21 +1,21 @@
 /**
  * Path Classification Helpers
  *
- * Utilities for classifying and normalizing paths within the Entire system.
+ * Utilities for classifying and normalizing paths within the Sessionlog system.
  *
  * Ported from Go: paths/paths.go
  */
 
 import * as path from 'node:path';
-import { ENTIRE_DIR } from '../types.js';
+import { SESSIONLOG_DIR } from '../types.js';
 
 /**
- * Returns true if the path is part of Entire's infrastructure
- * (i.e., inside the `.entire/` directory).
+ * Returns true if the path is part of Sessionlog's infrastructure
+ * (i.e., inside the `.sessionlog/` directory).
  */
 export function isInfrastructurePath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, '/');
-  return normalized === ENTIRE_DIR || normalized.startsWith(ENTIRE_DIR + '/');
+  return normalized === SESSIONLOG_DIR || normalized.startsWith(SESSIONLOG_DIR + '/');
 }
 
 /**

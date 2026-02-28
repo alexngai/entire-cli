@@ -1,7 +1,7 @@
 /**
- * Entire - Native TypeScript Implementation
+ * Sessionlog - Native TypeScript Implementation
  *
- * A self-contained module that implements the Entire CLI's functionality
+ * A self-contained module that implements the Sessionlog CLI's functionality
  * in TypeScript. Designed with clean boundaries for eventual extraction
  * into a standalone package.
  *
@@ -56,7 +56,7 @@ export type {
   WriteCommittedOptions,
   UpdateCommittedOptions,
   SessionChange,
-  EntireSettings,
+  SessionlogSettings,
 } from './types.js';
 
 export {
@@ -69,11 +69,11 @@ export {
   CHECKPOINT_ID_PATTERN,
   CHECKPOINTS_BRANCH,
   SHADOW_BRANCH_PREFIX,
-  ENTIRE_DIR,
-  ENTIRE_METADATA_DIR,
-  ENTIRE_TMP_DIR,
-  ENTIRE_SETTINGS_FILE,
-  ENTIRE_SETTINGS_LOCAL_FILE,
+  SESSIONLOG_DIR,
+  SESSIONLOG_METADATA_DIR,
+  SESSIONLOG_TMP_DIR,
+  SESSIONLOG_SETTINGS_FILE,
+  SESSIONLOG_SETTINGS_LOCAL_FILE,
   SESSION_DIR_NAME,
   MAX_CHUNK_SIZE,
   DEFAULT_SETTINGS,
@@ -145,14 +145,14 @@ export { createCheckpointStore, type CheckpointStore } from './store/checkpoint-
 // Native Store (replaces CLI store)
 // =============================================================================
 
-export { createNativeEntireStore } from './store/native-store.js';
+export { createNativeSessionlogStore } from './store/native-store.js';
 
 export type {
-  EntireStore,
-  EntireSession,
-  EntireCheckpoint,
-  EntireTokenUsage,
-  EntireSkillUsage,
+  SessionlogStore,
+  SessionlogSession,
+  SessionlogCheckpoint,
+  SessionlogTokenUsage,
+  SessionlogSkillUsage,
 } from './store/provider-types.js';
 
 // =============================================================================

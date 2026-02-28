@@ -1,18 +1,18 @@
 /**
  * Enable Command
  *
- * Enables Entire in a repository: creates settings, installs hooks,
+ * Enables Sessionlog in a repository: creates settings, installs hooks,
  * auto-detects agents.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  type EntireSettings,
+  type SessionlogSettings,
   type AgentName,
-  ENTIRE_DIR,
-  ENTIRE_METADATA_DIR,
-  ENTIRE_TMP_DIR,
+  SESSIONLOG_DIR,
+  SESSIONLOG_METADATA_DIR,
+  SESSIONLOG_TMP_DIR,
   SESSION_DIR_NAME,
 } from '../types.js';
 import {
@@ -71,7 +71,7 @@ export interface EnableResult {
 // ============================================================================
 
 /**
- * Enable Entire in a repository
+ * Enable Sessionlog in a repository
  */
 export async function enable(options: EnableOptions = {}): Promise<EnableResult> {
   const cwd = options.cwd ?? process.cwd();
@@ -117,7 +117,7 @@ export async function enable(options: EnableOptions = {}): Promise<EnableResult>
   await createDirectories(root, cwd);
 
   // Save settings
-  const settings: Partial<EntireSettings> = {
+  const settings: Partial<SessionlogSettings> = {
     enabled: true,
     strategy: 'manual-commit',
   };
@@ -184,12 +184,12 @@ export async function enable(options: EnableOptions = {}): Promise<EnableResult>
 
 async function createDirectories(root: string, cwd: string): Promise<void> {
   const dirs = [
-    path.join(root, ENTIRE_DIR),
-    path.join(root, ENTIRE_METADATA_DIR),
-    path.join(root, ENTIRE_TMP_DIR),
+    path.join(root, SESSIONLOG_DIR),
+    path.join(root, SESSIONLOG_METADATA_DIR),
+    path.join(root, SESSIONLOG_TMP_DIR),
   ];
 
-  // Also create .git/entire-sessions/
+  // Also create .git/sessionlog-sessions/
   try {
     const gitDir = await getGitDir(cwd);
     const sessionsDir = path.resolve(root, gitDir, SESSION_DIR_NAME);

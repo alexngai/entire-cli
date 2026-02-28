@@ -1,8 +1,8 @@
 /**
  * Disable Command
  *
- * Disables Entire in a repository. Can optionally fully uninstall
- * hooks and clean up all Entire data.
+ * Disables Sessionlog in a repository. Can optionally fully uninstall
+ * hooks and clean up all Sessionlog data.
  */
 
 import { getWorktreeRoot, isGitRepository } from '../git-operations.js';
@@ -34,7 +34,7 @@ export interface DisableResult {
 // ============================================================================
 
 /**
- * Disable Entire in a repository
+ * Disable Sessionlog in a repository
  */
 export async function disable(options: DisableOptions = {}): Promise<DisableResult> {
   const cwd = options.cwd ?? process.cwd();

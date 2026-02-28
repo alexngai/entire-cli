@@ -138,11 +138,11 @@ export async function isGitRepository(cwd?: string): Promise<boolean> {
 }
 
 /**
- * Get the sessions directory path (.git/entire-sessions/)
+ * Get the sessions directory path (.git/sessionlog-sessions/)
  */
 export async function getSessionsDir(cwd?: string): Promise<string> {
   const gitDir = await getGitDir(cwd);
-  return path.resolve(cwd ?? process.cwd(), gitDir, 'entire-sessions');
+  return path.resolve(cwd ?? process.cwd(), gitDir, 'sessionlog-sessions');
 }
 
 // ============================================================================
@@ -173,10 +173,10 @@ export async function initSessionRepo(repoPath: string): Promise<string> {
       env: {
         ...process.env,
         GIT_TERMINAL_PROMPT: '0',
-        GIT_AUTHOR_NAME: 'Entire',
-        GIT_AUTHOR_EMAIL: 'entire@localhost',
-        GIT_COMMITTER_NAME: 'Entire',
-        GIT_COMMITTER_EMAIL: 'entire@localhost',
+        GIT_AUTHOR_NAME: 'Sessionlog',
+        GIT_AUTHOR_EMAIL: 'sessionlog@localhost',
+        GIT_COMMITTER_NAME: 'Sessionlog',
+        GIT_COMMITTER_EMAIL: 'sessionlog@localhost',
       },
     });
   }
@@ -299,8 +299,8 @@ export async function updateRef(ref: string, commitHash: string, cwd?: string): 
  * Get the git author from config
  */
 export async function getGitAuthor(cwd?: string): Promise<GitAuthor> {
-  const name = (await gitSafe(['config', 'user.name'], { cwd })) ?? 'Entire';
-  const email = (await gitSafe(['config', 'user.email'], { cwd })) ?? 'entire@localhost';
+  const name = (await gitSafe(['config', 'user.name'], { cwd })) ?? 'Sessionlog';
+  const email = (await gitSafe(['config', 'user.email'], { cwd })) ?? 'sessionlog@localhost';
   return { name, email };
 }
 
