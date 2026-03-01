@@ -350,6 +350,7 @@ export {
   hasUserContent,
   stripCheckpointTrailer,
   type ManualCommitStrategyConfig,
+  type CheckpointCommittedEvent,
 } from './strategy/manual-commit.js';
 
 export type { Strategy, OrphanedItem, OrphanedItemType } from './strategy/types.js';

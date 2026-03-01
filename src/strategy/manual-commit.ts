@@ -16,7 +16,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SessionStore } from '../store/session-store.js';
 import type { CheckpointStore } from '../store/checkpoint-store.js';
-import type { SessionState, CheckpointID } from '../types.js';
+import type {
+  SessionState,
+  CheckpointID,
+  AgentType,
+  TokenUsage,
+  Summary,
+  InitialAttribution,
+} from '../types.js';
 import {
   addTokenUsage,
   CHECKPOINTS_BRANCH,
@@ -61,6 +68,19 @@ import { STRATEGY_NAME_MANUAL_COMMIT, formatSubagentEndMessage } from './types.j
 // ManualCommitStrategy
 // ============================================================================
 
+/** Event emitted after a checkpoint is committed to the metadata branch. */
+export interface CheckpointCommittedEvent {
+  checkpointID: string;
+  sessionID: string;
+  agent: AgentType;
+  branch?: string;
+  filesTouched: string[];
+  checkpointsCount: number;
+  tokenUsage?: TokenUsage;
+  summary?: Summary;
+  initialAttribution?: InitialAttribution;
+}
+
 export interface ManualCommitStrategyConfig {
   sessionStore: SessionStore;
   checkpointStore: CheckpointStore;
@@ -70,6 +90,9 @@ export interface ManualCommitStrategyConfig {
   sessionRepoCwd?: string;
   /** Override for the checkpoints branch name (e.g. project-namespaced). */
   checkpointsBranch?: string;
+  /** Called after a checkpoint is successfully committed to the metadata branch.
+   *  Use this to trigger sync notifications (e.g., MAP session sync). */
+  onCheckpointCommitted?: (event: CheckpointCommittedEvent) => void;
 }
 
 export function createManualCommitStrategy(config: ManualCommitStrategyConfig): Strategy {
@@ -690,6 +713,21 @@ export function createManualCommitStrategy(config: ManualCommitStrategyConfig): 
       checkpointTranscriptStart: state.checkpointTranscriptStart,
       tokenUsage: state.tokenUsage,
     });
+
+    // Notify external listeners (e.g., MAP session sync)
+    try {
+      config.onCheckpointCommitted?.({
+        checkpointID,
+        sessionID: state.sessionID,
+        agent: state.agentType,
+        branch: branch ?? undefined,
+        filesTouched,
+        checkpointsCount: state.stepCount,
+        tokenUsage: state.tokenUsage,
+      });
+    } catch {
+      // Non-fatal: sync notification failure shouldn't break checkpoint flow
+    }
 
     return {
       checkpointID,
