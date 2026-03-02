@@ -28,6 +28,9 @@ import { isEnabled, loadSettings } from './config.js';
 import { createSessionStore } from './store/session-store.js';
 import { createCheckpointStore } from './store/checkpoint-store.js';
 import { createManualCommitStrategy } from './strategy/manual-commit.js';
+import { createLifecycleHandler } from './hooks/lifecycle.js';
+import { getAgent } from './agent/registry.js';
+import { hasHookSupport } from './agent/types.js';
 import { getVersion } from './index.js';
 import {
   getWorktreeRoot,
@@ -411,6 +414,94 @@ async function cmdHooksGit(args: string[]): Promise<void> {
   }
 }
 
+// ============================================================================
+// Agent Hook Dispatch
+// ============================================================================
+
+/**
+ * Handle `sessionlog hooks <agent-name> <hook-name>`
+ *
+ * This is invoked by agent hooks (e.g., Claude Code's .claude/settings.json).
+ * Reads event data from stdin, parses it via the agent's parseHookEvent,
+ * and dispatches through the lifecycle handler.
+ *
+ * Agent hooks should fail silently — errors must not break the host agent.
+ */
+async function cmdHooksAgent(agentName: string, args: string[]): Promise<void> {
+  const hookName = args[0];
+  if (!hookName) return;
+
+  // Bail silently if Sessionlog is not enabled
+  if (!(await isEnabled())) return;
+
+  const agent = getAgent(agentName);
+  if (!agent || !hasHookSupport(agent)) return;
+
+  // Read stdin (agent hooks pass JSON event data via stdin)
+  let stdin = '';
+  try {
+    stdin = await readStdin();
+  } catch {
+    return;
+  }
+
+  if (!stdin.trim()) return;
+
+  // Parse the hook event
+  const event = agent.parseHookEvent(hookName, stdin);
+  if (!event) return;
+
+  // Resolve session repo if configured
+  const settings = await loadSettings();
+  let sessionsDir: string | undefined;
+
+  if (settings.sessionRepoPath) {
+    const root = await getWorktreeRoot();
+    const projectID = getProjectID(root);
+    const resolved = resolveSessionRepoPath(settings.sessionRepoPath, root);
+    const sessionRepoCwd = await initSessionRepo(resolved);
+    sessionsDir = `${sessionRepoCwd}/${SESSION_DIR_NAME}/${projectID}`;
+  }
+
+  // Dispatch through lifecycle handler
+  const handler = createLifecycleHandler({
+    sessionStore: createSessionStore(undefined, sessionsDir),
+    checkpointStore: createCheckpointStore(),
+  });
+
+  await handler.dispatch(agent, event);
+}
+
+/**
+ * Read all of stdin as a string (non-blocking, with timeout).
+ */
+function readStdin(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // If stdin is a TTY (no piped data), resolve immediately
+    if (process.stdin.isTTY) {
+      resolve('');
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    const timeout = setTimeout(() => {
+      process.stdin.removeAllListeners();
+      resolve(Buffer.concat(chunks).toString('utf-8'));
+    }, 1000);
+
+    process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk));
+    process.stdin.on('end', () => {
+      clearTimeout(timeout);
+      resolve(Buffer.concat(chunks).toString('utf-8'));
+    });
+    process.stdin.on('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+    process.stdin.resume();
+  });
+}
+
 async function cmdVersion(): Promise<void> {
   console.log(`sessionlog ${getVersion()}`);
 }
@@ -476,9 +567,14 @@ async function main(): Promise<void> {
       return cmdSetupCcweb(commandArgs);
     case 'hooks': {
       // `sessionlog hooks git <hook-name> [args...]`
+      // `sessionlog hooks <agent-name> <hook-name>`
       const subcommand = commandArgs[0];
       if (subcommand === 'git') {
         return cmdHooksGit(commandArgs.slice(1));
+      }
+      // Try as agent name (claude-code, cursor, gemini, opencode)
+      if (getAgent(subcommand)) {
+        return cmdHooksAgent(subcommand, commandArgs.slice(1));
       }
       console.error(`Unknown hooks subcommand: ${subcommand}`);
       process.exit(1);
