@@ -369,6 +369,17 @@ export {
 export { STRATEGY_NAME_MANUAL_COMMIT, MAX_COMMIT_TRAVERSAL_DEPTH } from './strategy/types.js';
 
 // =============================================================================
+// Wire Format Types (for external consumers)
+// =============================================================================
+
+export type {
+  SessionSyncCheckpoint,
+  SessionSyncTokenUsage,
+  SessionSyncSummary,
+  SessionSyncAttribution,
+} from './wire-types.js';
+
+// =============================================================================
 // Utilities
 // =============================================================================
 
