@@ -472,5 +472,139 @@ Users have requested a dark mode theme for the application.
       expect(event!.planFilePath).toBe('/Users/user/.claude/plans/my-feature.md');
       expect(event!.planAllowedPrompts).toHaveLength(2);
     });
+
+    it('should parse real Claude Code hook JSON for Skill use', () => {
+      const hookPayload = {
+        session_id: 'abc-123-def',
+        transcript_path: '/Users/user/.claude/projects/proj/transcript.jsonl',
+        tool_use_id: 'toolu_03SKL',
+        tool_input: {
+          skill: 'commit',
+          args: '-m "Fix bug"',
+        },
+        tool_response: 'Skill executed successfully',
+      };
+
+      const event = agent.parseHookEvent('post-skill', JSON.stringify(hookPayload));
+      expect(event).not.toBeNull();
+      expect(event!.type).toBe(EventType.SkillUse);
+      expect(event!.sessionID).toBe('abc-123-def');
+      expect(event!.skillName).toBe('commit');
+      expect(event!.skillArgs).toBe('-m "Fix bug"');
+      expect(event!.toolUseID).toBe('toolu_03SKL');
+    });
+  });
+
+  describe('Skill usage tracking', () => {
+    it('should persist skill usage through lifecycle to session state on disk', async () => {
+      const sessionsDir = path.join(tmpDir, '.git', 'sessionlog-sessions');
+      fs.mkdirSync(sessionsDir, { recursive: true });
+
+      const sessionStore = createSessionStore(tmpDir, sessionsDir);
+      const checkpointStore = createCheckpointStore(tmpDir);
+      const lifecycle = createLifecycleHandler({
+        sessionStore,
+        checkpointStore,
+        cwd: tmpDir,
+      });
+
+      // 1. Start a session
+      await lifecycle.dispatch(agent, makeEvent({ type: EventType.SessionStart }));
+
+      // 2. Use a skill
+      const skillStdin = JSON.stringify({
+        session_id: 'e2e-session',
+        transcript_path: '/path/to/transcript.jsonl',
+        tool_use_id: 'tu-skill-1',
+        tool_input: {
+          skill: 'commit',
+          args: '-m "Add feature"',
+        },
+        tool_response: 'Committed successfully',
+      });
+
+      const skillEvent = agent.parseHookEvent('post-skill', skillStdin);
+      expect(skillEvent).not.toBeNull();
+      await lifecycle.dispatch(agent, skillEvent!);
+
+      // 3. Use another skill (no args)
+      const skillStdin2 = JSON.stringify({
+        session_id: 'e2e-session',
+        transcript_path: '/path/to/transcript.jsonl',
+        tool_use_id: 'tu-skill-2',
+        tool_input: {
+          skill: 'review-pr',
+        },
+        tool_response: 'Review complete',
+      });
+
+      const skillEvent2 = agent.parseHookEvent('post-skill', skillStdin2);
+      await lifecycle.dispatch(agent, skillEvent2!);
+
+      // 4. Verify session state
+      const state = await sessionStore.load('e2e-session');
+      expect(state!.skillsUsed).toBeDefined();
+      expect(state!.skillsUsed).toHaveLength(2);
+      expect(state!.skillsUsed![0].name).toBe('commit');
+      expect(state!.skillsUsed![0].args).toBe('-m "Add feature"');
+      expect(state!.skillsUsed![0].usedAt).toBeDefined();
+      expect(state!.skillsUsed![1].name).toBe('review-pr');
+      expect(state!.skillsUsed![1].args).toBeUndefined();
+
+      // 5. Verify it's actually on disk
+      const sessionFile = path.join(sessionsDir, 'e2e-session.json');
+      const rawJSON = JSON.parse(fs.readFileSync(sessionFile, 'utf-8'));
+      expect(rawJSON.skillsUsed).toHaveLength(2);
+      expect(rawJSON.skillsUsed[0].name).toBe('commit');
+      expect(rawJSON.skillsUsed[1].name).toBe('review-pr');
+    });
+
+    it('should track skills alongside tasks and plan mode', async () => {
+      const sessionsDir = path.join(tmpDir, '.git', 'sessionlog-sessions');
+      fs.mkdirSync(sessionsDir, { recursive: true });
+
+      const sessionStore = createSessionStore(tmpDir, sessionsDir);
+      const checkpointStore = createCheckpointStore(tmpDir);
+      const lifecycle = createLifecycleHandler({
+        sessionStore,
+        checkpointStore,
+        cwd: tmpDir,
+      });
+
+      // Start session
+      await lifecycle.dispatch(agent, makeEvent({ type: EventType.SessionStart }));
+
+      // Use a skill
+      const skillStdin = JSON.stringify({
+        session_id: 'e2e-session',
+        transcript_path: '/path/to/transcript.jsonl',
+        tool_use_id: 'tu-skill-1',
+        tool_input: { skill: 'frontend-design' },
+      });
+      const skillEvent = agent.parseHookEvent('post-skill', skillStdin);
+      await lifecycle.dispatch(agent, skillEvent!);
+
+      // Enter and exit plan mode
+      await lifecycle.dispatch(agent, makeEvent({ type: EventType.PlanModeEnter }));
+      await lifecycle.dispatch(agent, makeEvent({ type: EventType.PlanModeExit }));
+
+      // Create a task
+      const taskStdin = JSON.stringify({
+        session_id: 'e2e-session',
+        transcript_path: '/path/to/transcript.jsonl',
+        tool_use_id: 'tu-task-1',
+        tool_input: { subject: 'Build UI', description: 'Build the frontend' },
+        tool_response: { taskId: '1' },
+      });
+      const taskEvent = agent.parseHookEvent('post-task-create', taskStdin);
+      await lifecycle.dispatch(agent, taskEvent!);
+
+      // Verify all three are tracked together
+      const state = await sessionStore.load('e2e-session');
+      expect(state!.skillsUsed).toHaveLength(1);
+      expect(state!.skillsUsed![0].name).toBe('frontend-design');
+      expect(state!.planModeEntries).toBe(1);
+      expect(Object.keys(state!.tasks!)).toHaveLength(1);
+    });
   });
 });

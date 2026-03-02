@@ -49,6 +49,7 @@ const HOOK_NAMES = [
   'post-task-update',
   'post-plan-enter',
   'post-plan-exit',
+  'post-skill',
 ] as const;
 
 /** Tools that modify files (detected in transcript) */
@@ -326,6 +327,22 @@ class ClaudeCodeAgent
           };
         }
 
+        case 'post-skill': {
+          const skInput = (data.tool_input ?? data.toolInput) as
+            | Record<string, unknown>
+            | undefined;
+          return {
+            type: EventType.SkillUse,
+            sessionID: String(data.session_id ?? data.sessionID ?? ''),
+            sessionRef: String(data.transcript_path ?? data.transcriptPath ?? ''),
+            toolUseID: String(data.tool_use_id ?? data.toolUseID ?? ''),
+            skillName: String(skInput?.skill ?? ''),
+            skillArgs: skInput?.args as string | undefined,
+            toolInput: skInput,
+            timestamp: new Date(),
+          };
+        }
+
         default:
           return null;
       }
@@ -374,6 +391,7 @@ class ClaudeCodeAgent
       { settingsKey: 'PostToolUse', hookName: 'post-task-update', matcher: 'TaskUpdate' },
       { settingsKey: 'PostToolUse', hookName: 'post-plan-enter', matcher: 'EnterPlanMode' },
       { settingsKey: 'PostToolUse', hookName: 'post-plan-exit', matcher: 'ExitPlanMode' },
+      { settingsKey: 'PostToolUse', hookName: 'post-skill', matcher: 'Skill' },
     ];
 
     for (const { settingsKey, hookName } of hookMappings) {

@@ -701,6 +701,7 @@ export function createManualCommitStrategy(config: ManualCommitStrategyConfig): 
       planModeUsed: (state.planModeEntries ?? 0) > 0,
       planModeEntries: state.planModeEntries,
       planEntries: state.planEntries,
+      skillsUsed: state.skillsUsed,
     });
 
     // Write event to the JSONL event log for external consumers (opt-in)

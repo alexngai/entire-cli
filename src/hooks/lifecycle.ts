@@ -74,6 +74,9 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
         case EventType.PlanModeExit:
           await handlePlanModeExit(agent, event);
           break;
+        case EventType.SkillUse:
+          await handleSkillUse(agent, event);
+          break;
       }
     },
   };
@@ -328,6 +331,24 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
       if (event.planAllowedPrompts) {
         lastEntry.allowedPrompts = event.planAllowedPrompts;
       }
+    }
+
+    state.lastInteractionTime = new Date().toISOString();
+    await sessionStore.save(state);
+  }
+
+  async function handleSkillUse(_agent: Agent, event: Event): Promise<void> {
+    const state = await sessionStore.load(event.sessionID);
+    if (!state) return;
+
+    if (!state.skillsUsed) state.skillsUsed = [];
+
+    if (event.skillName) {
+      state.skillsUsed.push({
+        name: event.skillName,
+        args: event.skillArgs,
+        usedAt: new Date().toISOString(),
+      });
     }
 
     state.lastInteractionTime = new Date().toISOString();

@@ -74,6 +74,7 @@ export enum EventType {
   TaskUpdate = 9,
   PlanModeEnter = 10,
   PlanModeExit = 11,
+  SkillUse = 12,
 }
 
 export interface Event {
@@ -102,6 +103,10 @@ export interface Event {
   planAllowedPrompts?: Array<{ tool: string; prompt: string }>;
   /** Path to the plan file (extracted from ExitPlanMode tool_response) */
   planFilePath?: string;
+  /** Skill name (from Skill tool_input) */
+  skillName?: string;
+  /** Skill arguments (from Skill tool_input) */
+  skillArgs?: string;
 }
 
 // ============================================================================
@@ -119,6 +124,13 @@ export interface TrackedTask {
   activeForm?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Tracked skill usage (lightweight, for session metadata) */
+export interface TrackedSkill {
+  name: string;
+  args?: string;
+  usedAt: string;
 }
 
 /** A single plan mode enter/exit cycle */
@@ -168,6 +180,8 @@ export interface SessionState {
   planModeEntries?: number;
   /** All plan mode entries (enter/exit cycles) */
   planEntries?: PlanEntry[];
+  /** Skills used during the session */
+  skillsUsed?: TrackedSkill[];
 }
 
 export interface PromptAttribution {
@@ -300,6 +314,8 @@ export interface CommittedMetadata {
   planModeEntries?: number;
   /** All plan mode entries */
   planEntries?: PlanEntry[];
+  /** Skills used during this checkpoint */
+  skillsUsed?: TrackedSkill[];
 }
 
 export interface Summary {
@@ -416,6 +432,8 @@ export interface WriteCommittedOptions {
   planModeEntries?: number;
   /** All plan mode entries */
   planEntries?: PlanEntry[];
+  /** Skills used */
+  skillsUsed?: TrackedSkill[];
 }
 
 export interface UpdateCommittedOptions {

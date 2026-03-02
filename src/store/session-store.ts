@@ -217,6 +217,9 @@ export function normalizeSessionState(id: string, data: Record<string, unknown>)
     inPlanMode: data.inPlanMode as boolean | undefined,
     planModeEntries: data.planModeEntries as number | undefined,
     planEntries: normalizePlanEntries(data),
+    skillsUsed: Array.isArray(data.skillsUsed)
+      ? (data.skillsUsed as SessionState['skillsUsed'])
+      : undefined,
   };
 }
 
