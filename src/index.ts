@@ -74,6 +74,7 @@ export {
   SESSIONLOG_TMP_DIR,
   SESSIONLOG_SETTINGS_FILE,
   SESSIONLOG_SETTINGS_LOCAL_FILE,
+  SESSIONLOG_EVENTS_FILE,
   SESSION_DIR_NAME,
   MAX_CHUNK_SIZE,
   DEFAULT_SETTINGS,
@@ -350,10 +351,20 @@ export {
   hasUserContent,
   stripCheckpointTrailer,
   type ManualCommitStrategyConfig,
-  type CheckpointCommittedEvent,
 } from './strategy/manual-commit.js';
 
 export type { Strategy, OrphanedItem, OrphanedItemType } from './strategy/types.js';
+
+// =============================================================================
+// Event Log
+// =============================================================================
+
+export {
+  appendCheckpointEvent,
+  readCheckpointEvents,
+  type CheckpointEvent,
+  type EventLogOptions,
+} from './events/event-log.js';
 
 export { STRATEGY_NAME_MANUAL_COMMIT, MAX_COMMIT_TRAVERSAL_DEPTH } from './strategy/types.js';
 
