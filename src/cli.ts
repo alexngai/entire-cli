@@ -421,56 +421,85 @@ async function cmdHooksGit(args: string[]): Promise<void> {
 /**
  * Handle `sessionlog hooks <agent-name> <hook-name>`
  *
- * This is invoked by agent hooks (e.g., Claude Code PostToolUse hooks).
- * Reads JSON from stdin, parses into an Event, and dispatches through
- * the lifecycle handler.
+ * This is invoked by agent hooks (e.g., Claude Code's .claude/settings.json).
+ * Reads event data from stdin, parses it via the agent's parseHookEvent,
+ * and dispatches through the lifecycle handler.
+ *
+ * Agent hooks should fail silently — errors must not break the host agent.
  */
 async function cmdHooksAgent(agentName: string, args: string[]): Promise<void> {
   const hookName = args[0];
-  if (!hookName || !agentName) return;
+  if (!hookName) return;
 
-  // Bail silently if not enabled
+  // Bail silently if Sessionlog is not enabled
   if (!(await isEnabled())) return;
 
-  // Read stdin (agent sends JSON via stdin)
-  const stdin = await readStdin();
-  if (!stdin) return;
-
-  // Resolve agent
   const agent = getAgent(agentName);
   if (!agent || !hasHookSupport(agent)) return;
 
-  // Parse event
+  // Read stdin (agent hooks pass JSON event data via stdin)
+  let stdin = '';
+  try {
+    stdin = await readStdin();
+  } catch {
+    return;
+  }
+
+  if (!stdin.trim()) return;
+
+  // Parse the hook event
   const event = agent.parseHookEvent(hookName, stdin);
   if (!event) return;
 
   // Resolve session repo if configured
   const settings = await loadSettings();
-  let sessionRepoCwd: string | undefined;
   let sessionsDir: string | undefined;
 
   if (settings.sessionRepoPath) {
     const root = await getWorktreeRoot();
     const projectID = getProjectID(root);
     const resolved = resolveSessionRepoPath(settings.sessionRepoPath, root);
-    sessionRepoCwd = await initSessionRepo(resolved);
+    const sessionRepoCwd = await initSessionRepo(resolved);
     sessionsDir = `${sessionRepoCwd}/${SESSION_DIR_NAME}/${projectID}`;
   }
 
-  const lifecycle = createLifecycleHandler({
+  // Dispatch through lifecycle handler
+  const handler = createLifecycleHandler({
     sessionStore: createSessionStore(undefined, sessionsDir),
-    checkpointStore: createCheckpointStore(undefined, sessionRepoCwd),
+    checkpointStore: createCheckpointStore(),
   });
 
-  await lifecycle.dispatch(agent, event);
+  await handler.dispatch(agent, event);
 }
 
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks).toString('utf-8');
+/**
+ * Read all of stdin as a string (non-blocking, with timeout).
+ */
+function readStdin(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // If stdin is a TTY (no piped data), resolve immediately
+    if (process.stdin.isTTY) {
+      resolve('');
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    const timeout = setTimeout(() => {
+      process.stdin.removeAllListeners();
+      resolve(Buffer.concat(chunks).toString('utf-8'));
+    }, 1000);
+
+    process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk));
+    process.stdin.on('end', () => {
+      clearTimeout(timeout);
+      resolve(Buffer.concat(chunks).toString('utf-8'));
+    });
+    process.stdin.on('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+    process.stdin.resume();
+  });
 }
 
 async function cmdVersion(): Promise<void> {
@@ -543,8 +572,13 @@ async function main(): Promise<void> {
       if (subcommand === 'git') {
         return cmdHooksGit(commandArgs.slice(1));
       }
-      // Agent hook dispatch (e.g., sessionlog hooks claude-code post-task-create)
-      return cmdHooksAgent(subcommand, commandArgs.slice(1));
+      // Try as agent name (claude-code, cursor, gemini, opencode)
+      if (getAgent(subcommand)) {
+        return cmdHooksAgent(subcommand, commandArgs.slice(1));
+      }
+      console.error(`Unknown hooks subcommand: ${subcommand}`);
+      process.exit(1);
+      break;
     }
     case 'version':
     case '--version':

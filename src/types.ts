@@ -454,6 +454,14 @@ export interface SessionlogSettings {
    *  in this repo instead of the project repo. Shadow branches (temporary
    *  checkpoints) remain in the project repo. */
   sessionRepoPath?: string;
+  /** Enable the JSONL event log (.sessionlog/events.jsonl).
+   *  When true, checkpoint events are appended to the log file for
+   *  consumption by external systems. Defaults to false. */
+  eventLogEnabled?: boolean;
+  /** Maximum number of events to retain in the event log file.
+   *  When set, the log is pruned to this many entries after each write.
+   *  When undefined or 0, all events are kept. */
+  eventLogMaxEvents?: number;
 }
 
 export const DEFAULT_SETTINGS: SessionlogSettings = {
@@ -473,6 +481,7 @@ export const SESSIONLOG_TMP_DIR = '.sessionlog/tmp';
 export const SESSIONLOG_METADATA_DIR = '.sessionlog/metadata';
 export const SESSIONLOG_SETTINGS_FILE = '.sessionlog/settings.json';
 export const SESSIONLOG_SETTINGS_LOCAL_FILE = '.sessionlog/settings.local.json';
+export const SESSIONLOG_EVENTS_FILE = '.sessionlog/events.jsonl';
 export const CHECKPOINTS_BRANCH = 'sessionlog/checkpoints/v1';
 export const SHADOW_BRANCH_PREFIX = 'sessionlog/';
 export const SHADOW_BRANCH_HASH_LENGTH = 7;

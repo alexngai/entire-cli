@@ -56,6 +56,7 @@ import type {
   OrphanedItem,
 } from './types.js';
 import { STRATEGY_NAME_MANUAL_COMMIT, formatSubagentEndMessage } from './types.js';
+import { appendCheckpointEvent } from '../events/event-log.js';
 
 // ============================================================================
 // ManualCommitStrategy
@@ -70,6 +71,13 @@ export interface ManualCommitStrategyConfig {
   sessionRepoCwd?: string;
   /** Override for the checkpoints branch name (e.g. project-namespaced). */
   checkpointsBranch?: string;
+  /** Enable the JSONL event log (.sessionlog/events.jsonl).
+   *  When true, checkpoint events are appended after each commit. */
+  eventLogEnabled?: boolean;
+  /** Maximum number of events to retain in the event log file.
+   *  When set, the log is pruned to this many entries after each write.
+   *  0 or undefined means keep all events. */
+  eventLogMaxEvents?: number;
 }
 
 export function createManualCommitStrategy(config: ManualCommitStrategyConfig): Strategy {
@@ -694,6 +702,30 @@ export function createManualCommitStrategy(config: ManualCommitStrategyConfig): 
       planModeEntries: state.planModeEntries,
       planEntries: state.planEntries,
     });
+
+    // Write event to the JSONL event log for external consumers (opt-in)
+    if (config.eventLogEnabled) {
+      try {
+        const eventCwd = cwd ?? process.cwd();
+        await appendCheckpointEvent(
+          eventCwd,
+          {
+            type: 'checkpoint_committed',
+            timestamp: new Date().toISOString(),
+            checkpointID,
+            sessionID: state.sessionID,
+            agent: state.agentType,
+            branch: branch ?? undefined,
+            filesTouched,
+            checkpointsCount: state.stepCount,
+            tokenUsage: state.tokenUsage,
+          },
+          { maxEvents: config.eventLogMaxEvents },
+        );
+      } catch {
+        // Non-fatal: event log failure shouldn't break checkpoint flow
+      }
+    }
 
     return {
       checkpointID,
