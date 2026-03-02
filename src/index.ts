@@ -41,6 +41,8 @@ export type {
   SessionState,
   PromptAttribution,
   TokenUsage,
+  TrackedTask,
+  PlanEntry,
   CheckpointID,
   Checkpoint,
   CheckpointSummary,
@@ -549,6 +551,7 @@ export { chunkFileName, parseChunkIndex, sortChunkFiles } from './utils/chunk-fi
 export {
   isInfrastructurePath,
   toRelativePath,
+  normalizeStoredPath,
   absPath,
   extractSessionIDFromPath,
   sessionMetadataDir,

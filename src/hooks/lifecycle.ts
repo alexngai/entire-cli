@@ -6,6 +6,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import type { Event, SessionState } from '../types.js';
 import { EventType, addTokenUsage } from '../types.js';
 import type { SessionStore } from '../store/session-store.js';
@@ -13,6 +14,7 @@ import type { CheckpointStore } from '../store/checkpoint-store.js';
 import type { Agent } from '../agent/types.js';
 import { hasTranscriptAnalyzer, hasTokenCalculator } from '../agent/types.js';
 import { getHead, getCurrentBranch, getUntrackedFiles } from '../git-operations.js';
+import { normalizeStoredPath } from '../utils/paths.js';
 
 // ============================================================================
 // Types
@@ -59,6 +61,18 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
           break;
         case EventType.SubagentEnd:
           await handleSubagentEnd(agent, event);
+          break;
+        case EventType.TaskCreate:
+          await handleTaskCreate(agent, event);
+          break;
+        case EventType.TaskUpdate:
+          await handleTaskUpdate(agent, event);
+          break;
+        case EventType.PlanModeEnter:
+          await handlePlanModeEnter(agent, event);
+          break;
+        case EventType.PlanModeExit:
+          await handlePlanModeExit(agent, event);
           break;
       }
     },
@@ -212,6 +226,109 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
   async function handleSubagentEnd(_agent: Agent, event: Event): Promise<void> {
     const state = await sessionStore.load(event.sessionID);
     if (!state) return;
+
+    state.lastInteractionTime = new Date().toISOString();
+    await sessionStore.save(state);
+  }
+
+  async function handleTaskCreate(_agent: Agent, event: Event): Promise<void> {
+    const state = await sessionStore.load(event.sessionID);
+    if (!state) return;
+
+    if (!state.tasks) state.tasks = {};
+
+    const taskID = event.taskID || event.toolUseID || '';
+    if (taskID) {
+      state.tasks[taskID] = {
+        id: taskID,
+        subject: event.taskSubject ?? '',
+        description: event.taskDescription,
+        status: 'pending',
+        activeForm: event.taskActiveForm,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    state.lastInteractionTime = new Date().toISOString();
+    await sessionStore.save(state);
+  }
+
+  async function handleTaskUpdate(_agent: Agent, event: Event): Promise<void> {
+    const state = await sessionStore.load(event.sessionID);
+    if (!state) return;
+
+    if (!state.tasks) state.tasks = {};
+
+    const taskID = event.taskID ?? '';
+    if (taskID) {
+      if (state.tasks[taskID]) {
+        if (event.taskStatus) state.tasks[taskID].status = event.taskStatus;
+        if (event.taskSubject) state.tasks[taskID].subject = event.taskSubject;
+        if (event.taskDescription) state.tasks[taskID].description = event.taskDescription;
+        state.tasks[taskID].updatedAt = new Date().toISOString();
+      } else {
+        // Task not previously tracked
+        state.tasks[taskID] = {
+          id: taskID,
+          subject: event.taskSubject ?? '',
+          description: event.taskDescription,
+          status: event.taskStatus ?? 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+    }
+
+    state.lastInteractionTime = new Date().toISOString();
+    await sessionStore.save(state);
+  }
+
+  async function handlePlanModeEnter(_agent: Agent, event: Event): Promise<void> {
+    const state = await sessionStore.load(event.sessionID);
+    if (!state) return;
+
+    state.inPlanMode = true;
+    state.planModeEntries = (state.planModeEntries ?? 0) + 1;
+
+    // Push a new plan entry (will be completed on exit)
+    if (!state.planEntries) state.planEntries = [];
+    state.planEntries.push({
+      enteredAt: new Date().toISOString(),
+    });
+
+    state.lastInteractionTime = new Date().toISOString();
+    await sessionStore.save(state);
+  }
+
+  async function handlePlanModeExit(_agent: Agent, event: Event): Promise<void> {
+    const state = await sessionStore.load(event.sessionID);
+    if (!state) return;
+
+    state.inPlanMode = false;
+
+    // Complete the last plan entry
+    const lastEntry = (state.planEntries ?? []).at(-1);
+    if (lastEntry && !lastEntry.exitedAt) {
+      lastEntry.exitedAt = new Date().toISOString();
+
+      if (event.planFilePath) {
+        lastEntry.filePath = cwd
+          ? normalizeStoredPath(event.planFilePath, cwd)
+          : event.planFilePath;
+        try {
+          // Always read from the original absolute path
+          const content = await readFile(event.planFilePath, 'utf-8');
+          lastEntry.content = content;
+        } catch {
+          // File may have been cleaned up already — store path only
+        }
+      }
+
+      if (event.planAllowedPrompts) {
+        lastEntry.allowedPrompts = event.planAllowedPrompts;
+      }
+    }
 
     state.lastInteractionTime = new Date().toISOString();
     await sessionStore.save(state);

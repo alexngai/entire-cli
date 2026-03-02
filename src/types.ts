@@ -70,6 +70,10 @@ export enum EventType {
   SessionEnd = 5,
   SubagentStart = 6,
   SubagentEnd = 7,
+  TaskCreate = 8,
+  TaskUpdate = 9,
+  PlanModeEnter = 10,
+  PlanModeExit = 11,
 }
 
 export interface Event {
@@ -86,6 +90,18 @@ export interface Event {
   taskDescription?: string;
   responseMessage?: string;
   metadata?: Record<string, string>;
+  /** Task ID (from tool_response for TaskCreate, from tool_input for TaskUpdate) */
+  taskID?: string;
+  /** Task subject/title */
+  taskSubject?: string;
+  /** Task status: 'pending' | 'in_progress' | 'completed' */
+  taskStatus?: string;
+  /** Task active form (present continuous label) */
+  taskActiveForm?: string;
+  /** Plan mode allowed prompts from ExitPlanMode */
+  planAllowedPrompts?: Array<{ tool: string; prompt: string }>;
+  /** Path to the plan file (extracted from ExitPlanMode tool_response) */
+  planFilePath?: string;
 }
 
 // ============================================================================
@@ -93,6 +109,31 @@ export interface Event {
 // ============================================================================
 
 export type SessionPhase = 'idle' | 'active' | 'ended';
+
+/** Tracked task state (lightweight, for session metadata) */
+export interface TrackedTask {
+  id: string;
+  subject: string;
+  description?: string;
+  status: string;
+  activeForm?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A single plan mode enter/exit cycle */
+export interface PlanEntry {
+  /** ISO timestamp when plan mode was entered */
+  enteredAt: string;
+  /** ISO timestamp when plan mode was exited (undefined if still in plan mode) */
+  exitedAt?: string;
+  /** Path to the plan file (captured on exit) */
+  filePath?: string;
+  /** Content of the plan file (captured on exit) */
+  content?: string;
+  /** Allowed prompts from ExitPlanMode (captured on exit) */
+  allowedPrompts?: Array<{ tool: string; prompt: string }>;
+}
 
 export interface SessionState {
   sessionID: string;
@@ -119,6 +160,14 @@ export interface SessionState {
   firstPrompt?: string;
   promptAttributions?: PromptAttribution[];
   pendingPromptAttribution?: PromptAttribution;
+  /** Tracked tasks during the session */
+  tasks?: Record<string, TrackedTask>;
+  /** Whether the session is currently in plan mode */
+  inPlanMode?: boolean;
+  /** Number of times plan mode was entered */
+  planModeEntries?: number;
+  /** All plan mode entries (enter/exit cycles) */
+  planEntries?: PlanEntry[];
 }
 
 export interface PromptAttribution {
@@ -243,6 +292,14 @@ export interface CommittedMetadata {
   tokenUsage?: TokenUsage;
   summary?: Summary;
   initialAttribution?: InitialAttribution;
+  /** Tasks that were active/completed during this checkpoint */
+  tasks?: Record<string, TrackedTask>;
+  /** Whether plan mode was used during this checkpoint */
+  planModeUsed?: boolean;
+  /** Number of plan mode entries during this checkpoint */
+  planModeEntries?: number;
+  /** All plan mode entries */
+  planEntries?: PlanEntry[];
 }
 
 export interface Summary {
@@ -351,6 +408,14 @@ export interface WriteCommittedOptions {
   tokenUsage?: TokenUsage;
   initialAttribution?: InitialAttribution;
   summary?: Summary;
+  /** Tasks tracked during this checkpoint */
+  tasks?: Record<string, TrackedTask>;
+  /** Whether plan mode was used */
+  planModeUsed?: boolean;
+  /** Number of plan mode entries */
+  planModeEntries?: number;
+  /** All plan mode entries */
+  planEntries?: PlanEntry[];
 }
 
 export interface UpdateCommittedOptions {

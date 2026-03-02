@@ -8,6 +8,7 @@ import {
   checkpointIDPath,
   emptyTokenUsage,
   addTokenUsage,
+  EventType,
   CHECKPOINT_ID_LENGTH,
   CHECKPOINT_ID_PATTERN,
   AGENT_NAMES,
@@ -32,6 +33,33 @@ describe('Sessionlog Types', () => {
 
     it('should have Claude Code as default agent', () => {
       expect(DEFAULT_AGENT_NAME).toBe('claude-code');
+    });
+  });
+
+  describe('EventType', () => {
+    it('should have task and plan mode event types', () => {
+      expect(EventType.TaskCreate).toBe(8);
+      expect(EventType.TaskUpdate).toBe(9);
+      expect(EventType.PlanModeEnter).toBe(10);
+      expect(EventType.PlanModeExit).toBe(11);
+    });
+
+    it('should not conflict with existing event types', () => {
+      const values = [
+        EventType.SessionStart,
+        EventType.TurnStart,
+        EventType.TurnEnd,
+        EventType.Compaction,
+        EventType.SessionEnd,
+        EventType.SubagentStart,
+        EventType.SubagentEnd,
+        EventType.TaskCreate,
+        EventType.TaskUpdate,
+        EventType.PlanModeEnter,
+        EventType.PlanModeExit,
+      ];
+      const unique = new Set(values);
+      expect(unique.size).toBe(values.length);
     });
   });
 

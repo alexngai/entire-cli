@@ -32,6 +32,22 @@ export function toRelativePath(absPath: string, cwd: string): string {
 }
 
 /**
+ * Normalizes a path for storage: converts to CWD-relative when inside the
+ * working directory, keeps absolute otherwise.
+ *
+ * Examples (cwd = /Users/alex/project):
+ *   /Users/alex/project/src/app.ts  →  src/app.ts
+ *   /Users/alex/.claude/plans/p.md  →  /Users/alex/.claude/plans/p.md  (outside CWD)
+ *   src/app.ts                      →  src/app.ts  (already relative)
+ */
+export function normalizeStoredPath(filePath: string, cwd: string): string {
+  if (!path.isAbsolute(filePath)) return filePath;
+  const relPath = path.relative(cwd, filePath);
+  if (relPath.startsWith('..')) return filePath;
+  return relPath;
+}
+
+/**
  * Returns the absolute path for a relative path within the repository.
  * If the path is already absolute, it is returned as-is.
  */

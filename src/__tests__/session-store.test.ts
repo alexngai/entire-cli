@@ -79,5 +79,88 @@ describe('Session Store', () => {
       expect(state.endedAt).toBe('2026-02-13T13:00:00Z');
       expect(state.worktreeID).toBe('main');
     });
+
+    it('should normalize task tracking fields', () => {
+      const tasks = {
+        '1': {
+          id: '1',
+          subject: 'Fix bug',
+          status: 'completed',
+          createdAt: '2026-02-13T12:00:00Z',
+          updatedAt: '2026-02-13T12:30:00Z',
+        },
+      };
+      const state = normalizeSessionState('id', {
+        tasks,
+        inPlanMode: true,
+        planModeEntries: 2,
+      });
+
+      expect(state.tasks).toEqual(tasks);
+      expect(state.inPlanMode).toBe(true);
+      expect(state.planModeEntries).toBe(2);
+    });
+
+    it('should handle missing task/plan fields for backward compatibility', () => {
+      const state = normalizeSessionState('id', {});
+      expect(state.tasks).toBeUndefined();
+      expect(state.inPlanMode).toBeUndefined();
+      expect(state.planModeEntries).toBeUndefined();
+      expect(state.planEntries).toBeUndefined();
+    });
+
+    it('should normalize planEntries array', () => {
+      const entries = [
+        {
+          enteredAt: '2026-02-13T12:00:00Z',
+          exitedAt: '2026-02-13T12:05:00Z',
+          filePath: '/home/user/.claude/plans/my-plan.md',
+          content: '# Plan\n\nStep 1: Do the thing',
+        },
+      ];
+      const state = normalizeSessionState('id', { planEntries: entries });
+      expect(state.planEntries).toEqual(entries);
+    });
+
+    it('should migrate old planFilePath/planContent to planEntries', () => {
+      const state = normalizeSessionState('id', {
+        planFilePath: '/home/user/.claude/plans/my-plan.md',
+        planContent: '# Plan\n\nStep 1: Do the thing',
+        startedAt: '2026-02-13T12:00:00Z',
+      });
+      expect(state.planEntries).toHaveLength(1);
+      expect(state.planEntries![0].filePath).toBe('/home/user/.claude/plans/my-plan.md');
+      expect(state.planEntries![0].content).toBe('# Plan\n\nStep 1: Do the thing');
+    });
+
+    it('should normalize multiple planEntries', () => {
+      const entries = [
+        { enteredAt: '2026-02-13T12:00:00Z', exitedAt: '2026-02-13T12:05:00Z' },
+        {
+          enteredAt: '2026-02-13T13:00:00Z',
+          exitedAt: '2026-02-13T13:10:00Z',
+          filePath: '/plans/v2.md',
+          content: '# V2 Plan',
+        },
+      ];
+      const state = normalizeSessionState('id', { planEntries: entries });
+      expect(state.planEntries).toHaveLength(2);
+      expect(state.planEntries![1].filePath).toBe('/plans/v2.md');
+    });
+
+    it('should normalize task description field', () => {
+      const tasks = {
+        '1': {
+          id: '1',
+          subject: 'Fix bug',
+          description: 'Detailed description of the bug',
+          status: 'pending',
+          createdAt: '2026-02-13T12:00:00Z',
+          updatedAt: '2026-02-13T12:00:00Z',
+        },
+      };
+      const state = normalizeSessionState('id', { tasks });
+      expect(state.tasks!['1'].description).toBe('Detailed description of the bug');
+    });
   });
 });

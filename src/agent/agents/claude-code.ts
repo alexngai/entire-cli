@@ -45,6 +45,10 @@ const HOOK_NAMES = [
   'pre-task',
   'post-task',
   'post-todo',
+  'post-task-create',
+  'post-task-update',
+  'post-plan-enter',
+  'post-plan-exit',
 ] as const;
 
 /** Tools that modify files (detected in transcript) */
@@ -240,6 +244,88 @@ class ClaudeCodeAgent
             timestamp: new Date(),
           };
 
+        case 'post-task-create': {
+          const tcInput = (data.tool_input ?? data.toolInput) as
+            | Record<string, unknown>
+            | undefined;
+          const tcResponse = (data.tool_response ?? data.toolResponse) as
+            | Record<string, unknown>
+            | undefined;
+          return {
+            type: EventType.TaskCreate,
+            sessionID: String(data.session_id ?? data.sessionID ?? ''),
+            sessionRef: String(data.transcript_path ?? data.transcriptPath ?? ''),
+            toolUseID: String(data.tool_use_id ?? data.toolUseID ?? ''),
+            taskID: String(tcResponse?.taskId ?? tcResponse?.id ?? ''),
+            taskSubject: String(tcInput?.subject ?? ''),
+            taskActiveForm: tcInput?.activeForm as string | undefined,
+            taskDescription: tcInput?.description as string | undefined,
+            toolInput: tcInput,
+            timestamp: new Date(),
+          };
+        }
+
+        case 'post-task-update': {
+          const tuInput = (data.tool_input ?? data.toolInput) as
+            | Record<string, unknown>
+            | undefined;
+          return {
+            type: EventType.TaskUpdate,
+            sessionID: String(data.session_id ?? data.sessionID ?? ''),
+            sessionRef: String(data.transcript_path ?? data.transcriptPath ?? ''),
+            toolUseID: String(data.tool_use_id ?? data.toolUseID ?? ''),
+            taskID: String(tuInput?.taskId ?? ''),
+            taskStatus: tuInput?.status as string | undefined,
+            taskSubject: tuInput?.subject as string | undefined,
+            taskDescription: tuInput?.description as string | undefined,
+            toolInput: tuInput,
+            timestamp: new Date(),
+          };
+        }
+
+        case 'post-plan-enter':
+          return {
+            type: EventType.PlanModeEnter,
+            sessionID: String(data.session_id ?? data.sessionID ?? ''),
+            sessionRef: String(data.transcript_path ?? data.transcriptPath ?? ''),
+            timestamp: new Date(),
+          };
+
+        case 'post-plan-exit': {
+          const peInput = (data.tool_input ?? data.toolInput) as
+            | Record<string, unknown>
+            | undefined;
+          const peResponse = (data.tool_response ?? data.toolResponse) as
+            | Record<string, unknown>
+            | string
+            | undefined;
+          // Extract plan file path from tool_response
+          let planFilePath: string | undefined;
+          if (typeof peResponse === 'object' && peResponse !== null) {
+            planFilePath = (peResponse.planFilePath ??
+              peResponse.planFile ??
+              peResponse.file_path) as string | undefined;
+            // Also try parsing from a message like "Your plan has been saved to: <path>"
+            if (!planFilePath && typeof peResponse.content === 'string') {
+              const match = peResponse.content.match(/saved to:\s*(.+)/i);
+              if (match) planFilePath = match[1].trim();
+            }
+          } else if (typeof peResponse === 'string') {
+            const match = peResponse.match(/saved to:\s*(.+)/i);
+            if (match) planFilePath = match[1].trim();
+          }
+          return {
+            type: EventType.PlanModeExit,
+            sessionID: String(data.session_id ?? data.sessionID ?? ''),
+            sessionRef: String(data.transcript_path ?? data.transcriptPath ?? ''),
+            planAllowedPrompts: peInput?.allowedPrompts as
+              | Array<{ tool: string; prompt: string }>
+              | undefined,
+            planFilePath,
+            timestamp: new Date(),
+          };
+        }
+
         default:
           return null;
       }
@@ -284,6 +370,10 @@ class ClaudeCodeAgent
       { settingsKey: 'PreToolUse', hookName: 'pre-task', matcher: 'Task' },
       { settingsKey: 'PostToolUse', hookName: 'post-task', matcher: 'Task' },
       { settingsKey: 'PostToolUse', hookName: 'post-todo', matcher: 'TodoWrite' },
+      { settingsKey: 'PostToolUse', hookName: 'post-task-create', matcher: 'TaskCreate' },
+      { settingsKey: 'PostToolUse', hookName: 'post-task-update', matcher: 'TaskUpdate' },
+      { settingsKey: 'PostToolUse', hookName: 'post-plan-enter', matcher: 'EnterPlanMode' },
+      { settingsKey: 'PostToolUse', hookName: 'post-plan-exit', matcher: 'ExitPlanMode' },
     ];
 
     for (const { settingsKey, hookName } of hookMappings) {

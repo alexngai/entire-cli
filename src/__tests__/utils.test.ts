@@ -16,6 +16,7 @@ import {
   extractUserContent,
 } from '../utils/transcript-parse.js';
 import { stripIDEContextTags } from '../utils/ide-tags.js';
+import { normalizeStoredPath } from '../utils/paths.js';
 import {
   parseCheckpoint,
   parseAllSessions,
@@ -294,5 +295,39 @@ describe('Trailers', () => {
       expect(result).toContain('Sessionlog-Session: session-1');
       expect(result).toContain('Sessionlog-Strategy: manual-commit');
     });
+  });
+});
+
+describe('normalizeStoredPath', () => {
+  const cwd = '/Users/alex/project';
+
+  it('should make paths under CWD relative', () => {
+    expect(normalizeStoredPath('/Users/alex/project/src/app.ts', cwd)).toBe('src/app.ts');
+  });
+
+  it('should keep paths outside CWD absolute', () => {
+    expect(normalizeStoredPath('/Users/alex/.claude/plans/plan.md', cwd)).toBe(
+      '/Users/alex/.claude/plans/plan.md',
+    );
+  });
+
+  it('should return already-relative paths unchanged', () => {
+    expect(normalizeStoredPath('src/app.ts', cwd)).toBe('src/app.ts');
+  });
+
+  it('should handle CWD root path', () => {
+    expect(normalizeStoredPath('/Users/alex/project', cwd)).toBe('');
+  });
+
+  it('should handle paths with shared prefix but outside CWD', () => {
+    expect(normalizeStoredPath('/Users/alex/project-other/file.ts', cwd)).toBe(
+      '/Users/alex/project-other/file.ts',
+    );
+  });
+
+  it('should handle deeply nested paths under CWD', () => {
+    expect(normalizeStoredPath('/Users/alex/project/src/hooks/lifecycle.ts', cwd)).toBe(
+      'src/hooks/lifecycle.ts',
+    );
   });
 });

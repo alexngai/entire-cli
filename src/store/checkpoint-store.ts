@@ -288,6 +288,10 @@ export function createCheckpointStore(
         tokenUsage: opts.tokenUsage,
         summary: opts.summary,
         initialAttribution: opts.initialAttribution,
+        tasks: opts.tasks,
+        planModeUsed: opts.planModeUsed,
+        planModeEntries: opts.planModeEntries,
+        planEntries: opts.planEntries,
       };
 
       // Create blob objects in the target repo

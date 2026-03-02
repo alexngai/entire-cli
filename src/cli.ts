@@ -28,6 +28,9 @@ import { isEnabled, loadSettings } from './config.js';
 import { createSessionStore } from './store/session-store.js';
 import { createCheckpointStore } from './store/checkpoint-store.js';
 import { createManualCommitStrategy } from './strategy/manual-commit.js';
+import { createLifecycleHandler } from './hooks/lifecycle.js';
+import { getAgent } from './agent/registry.js';
+import { hasHookSupport } from './agent/types.js';
 import { getVersion } from './index.js';
 import {
   getWorktreeRoot,
@@ -411,6 +414,65 @@ async function cmdHooksGit(args: string[]): Promise<void> {
   }
 }
 
+// ============================================================================
+// Agent Hook Dispatch
+// ============================================================================
+
+/**
+ * Handle `sessionlog hooks <agent-name> <hook-name>`
+ *
+ * This is invoked by agent hooks (e.g., Claude Code PostToolUse hooks).
+ * Reads JSON from stdin, parses into an Event, and dispatches through
+ * the lifecycle handler.
+ */
+async function cmdHooksAgent(agentName: string, args: string[]): Promise<void> {
+  const hookName = args[0];
+  if (!hookName || !agentName) return;
+
+  // Bail silently if not enabled
+  if (!(await isEnabled())) return;
+
+  // Read stdin (agent sends JSON via stdin)
+  const stdin = await readStdin();
+  if (!stdin) return;
+
+  // Resolve agent
+  const agent = getAgent(agentName);
+  if (!agent || !hasHookSupport(agent)) return;
+
+  // Parse event
+  const event = agent.parseHookEvent(hookName, stdin);
+  if (!event) return;
+
+  // Resolve session repo if configured
+  const settings = await loadSettings();
+  let sessionRepoCwd: string | undefined;
+  let sessionsDir: string | undefined;
+
+  if (settings.sessionRepoPath) {
+    const root = await getWorktreeRoot();
+    const projectID = getProjectID(root);
+    const resolved = resolveSessionRepoPath(settings.sessionRepoPath, root);
+    sessionRepoCwd = await initSessionRepo(resolved);
+    sessionsDir = `${sessionRepoCwd}/${SESSION_DIR_NAME}/${projectID}`;
+  }
+
+  const lifecycle = createLifecycleHandler({
+    sessionStore: createSessionStore(undefined, sessionsDir),
+    checkpointStore: createCheckpointStore(undefined, sessionRepoCwd),
+  });
+
+  await lifecycle.dispatch(agent, event);
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+}
+
 async function cmdVersion(): Promise<void> {
   console.log(`sessionlog ${getVersion()}`);
 }
@@ -476,13 +538,13 @@ async function main(): Promise<void> {
       return cmdSetupCcweb(commandArgs);
     case 'hooks': {
       // `sessionlog hooks git <hook-name> [args...]`
+      // `sessionlog hooks <agent-name> <hook-name>`
       const subcommand = commandArgs[0];
       if (subcommand === 'git') {
         return cmdHooksGit(commandArgs.slice(1));
       }
-      console.error(`Unknown hooks subcommand: ${subcommand}`);
-      process.exit(1);
-      break;
+      // Agent hook dispatch (e.g., sessionlog hooks claude-code post-task-create)
+      return cmdHooksAgent(subcommand, commandArgs.slice(1));
     }
     case 'version':
     case '--version':

@@ -12,6 +12,7 @@ import {
   type SessionState,
   type SessionPhase,
   type TokenUsage,
+  type PlanEntry,
   STALE_SESSION_DAYS,
 } from '../types.js';
 import { getSessionsDir, atomicWriteFile } from '../git-operations.js';
@@ -212,6 +213,10 @@ export function normalizeSessionState(id: string, data: Record<string, unknown>)
     promptAttributions: data.promptAttributions as SessionState['promptAttributions'],
     pendingPromptAttribution:
       data.pendingPromptAttribution as SessionState['pendingPromptAttribution'],
+    tasks: data.tasks as SessionState['tasks'],
+    inPlanMode: data.inPlanMode as boolean | undefined,
+    planModeEntries: data.planModeEntries as number | undefined,
+    planEntries: normalizePlanEntries(data),
   };
 }
 
@@ -221,6 +226,28 @@ function normalizePhase(phase: string): SessionPhase {
   if (lower === 'idle') return 'idle';
   if (lower === 'ended') return 'ended';
   return 'idle';
+}
+
+function normalizePlanEntries(data: Record<string, unknown>): PlanEntry[] | undefined {
+  if (Array.isArray(data.planEntries)) {
+    return data.planEntries as PlanEntry[];
+  }
+
+  // Migration: synthesize from old planFilePath/planContent fields
+  const filePath = data.planFilePath as string | undefined;
+  const content = data.planContent as string | undefined;
+  if (filePath || content) {
+    return [
+      {
+        enteredAt: (data.startedAt as string) ?? new Date().toISOString(),
+        exitedAt: (data.startedAt as string) ?? new Date().toISOString(),
+        filePath,
+        content,
+      },
+    ];
+  }
+
+  return undefined;
 }
 
 /**
