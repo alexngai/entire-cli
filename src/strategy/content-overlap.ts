@@ -102,7 +102,12 @@ export async function stagedFilesOverlapWithContent(
     const shadowContent = await gitSafe(['show', `refs/heads/${shadowBranchName}:${stagedPath}`], {
       cwd,
     });
-    if (shadowContent === null) continue;
+    if (shadowContent === null) {
+      // File not in shadow branch but is in filesTouched — the agent created it.
+      // The shadow branch only contains HEAD's tree, so new agent-created files
+      // won't be there. Since we've already verified the file is tracked, count it.
+      return true;
+    }
 
     // Get staged content
     const stagedContent = await gitSafe(['show', `:${stagedPath}`], { cwd });

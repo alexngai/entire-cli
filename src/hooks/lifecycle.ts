@@ -6,6 +6,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import * as path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { Event, SessionState } from '../types.js';
 import { EventType, addTokenUsage } from '../types.js';
@@ -13,7 +14,7 @@ import type { SessionStore } from '../store/session-store.js';
 import type { CheckpointStore } from '../store/checkpoint-store.js';
 import type { Agent } from '../agent/types.js';
 import { hasTranscriptAnalyzer, hasTokenCalculator } from '../agent/types.js';
-import { getHead, getCurrentBranch, getUntrackedFiles } from '../git-operations.js';
+import { getHead, getCurrentBranch, getUntrackedFiles, getGitAuthor } from '../git-operations.js';
 import { normalizeStoredPath } from '../utils/paths.js';
 
 // ============================================================================
@@ -171,6 +172,39 @@ export function createLifecycleHandler(config: LifecycleConfig): LifecycleHandle
         state.filesTouched = Array.from(fileSet);
       } catch {
         // Ignore extraction errors
+      }
+    }
+
+    // Create shadow branch checkpoint so prepareCommitMsg can detect overlap
+    if (state.filesTouched.length > 0) {
+      try {
+        const { name: authorName, email: authorEmail } = await getGitAuthor(cwd);
+        // Use flat name (no slashes) — mergeMetadataIntoTree can't handle nested paths
+        const metadataDir = `sessionlog-${state.sessionID}`;
+        const metadataDirAbs = path.resolve(cwd ?? '.', metadataDir);
+
+        const result = await config.checkpointStore.writeTemporary({
+          sessionID: state.sessionID,
+          baseCommit: state.baseCommit,
+          worktreeID: state.worktreeID,
+          modifiedFiles: state.filesTouched,
+          newFiles: [],
+          deletedFiles: [],
+          metadataDir,
+          metadataDirAbs,
+          commitMessage: `Checkpoint: ${state.filesTouched.length} file(s)\n\nSession: ${state.sessionID}`,
+          authorName,
+          authorEmail,
+          isFirstCheckpoint: state.stepCount === 0,
+        });
+
+        if (!result.skipped) {
+          state.stepCount++;
+        }
+      } catch (err) {
+        // Non-fatal: shadow branch creation failure shouldn't break lifecycle
+
+        if (process.env.SESSIONLOG_DEBUG) console.error('[sessionlog] shadow branch error:', err);
       }
     }
 

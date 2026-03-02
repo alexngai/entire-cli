@@ -309,6 +309,71 @@ describe('Lifecycle Handler with Agent Events', () => {
     expect(session!.endedAt).toBeDefined();
   });
 
+  it('should create shadow branch on TurnEnd when files were modified', async () => {
+    const sessionStore = createSessionStore(tmpDir);
+    const checkpointStore = createCheckpointStore(tmpDir);
+    const handler = createLifecycleHandler({ sessionStore, checkpointStore, cwd: tmpDir });
+    const agent = getAgent('claude-code')!;
+
+    // Create an empty transcript file (TurnStart records the current position)
+    const transcriptPath = path.join(tmpDir, 'transcript.jsonl');
+    fs.writeFileSync(transcriptPath, '');
+
+    // Dispatch SessionStart → TurnStart
+    await handler.dispatch(agent, {
+      type: EventType.SessionStart,
+      sessionID: 'shadow-test',
+      sessionRef: transcriptPath,
+      timestamp: new Date(),
+    });
+    await handler.dispatch(agent, {
+      type: EventType.TurnStart,
+      sessionID: 'shadow-test',
+      sessionRef: transcriptPath,
+      prompt: 'create hello',
+      timestamp: new Date(),
+    });
+
+    // Simulate agent writing a file (transcript updated DURING the turn)
+    const transcriptLine = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            name: 'Write',
+            input: { file_path: 'src/hello.ts' },
+          },
+        ],
+      },
+    });
+    fs.writeFileSync(transcriptPath, transcriptLine + '\n');
+
+    // TurnEnd extracts files from transcript and creates shadow branch
+    await handler.dispatch(agent, {
+      type: EventType.TurnEnd,
+      sessionID: 'shadow-test',
+      sessionRef: transcriptPath,
+      timestamp: new Date(),
+    });
+
+    const session = await sessionStore.load('shadow-test');
+    expect(session).not.toBeNull();
+    expect(session!.filesTouched).toContain('src/hello.ts');
+    expect(session!.stepCount).toBe(1);
+
+    // Verify shadow branch was created
+    const shadowBranch = checkpointStore.getShadowBranchName(
+      session!.baseCommit,
+      session!.worktreeID,
+    );
+    const branchList = execSync(`git branch --list "${shadowBranch}"`, {
+      cwd: tmpDir,
+      encoding: 'utf-8',
+    });
+    expect(branchList.trim()).toContain(shadowBranch);
+  });
+
   it('should auto-create session on TurnStart if session does not exist', async () => {
     const sessionStore = createSessionStore(tmpDir);
     const checkpointStore = createCheckpointStore(tmpDir);

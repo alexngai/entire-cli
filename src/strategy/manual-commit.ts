@@ -195,6 +195,59 @@ export function createManualCommitStrategy(config: ManualCommitStrategyConfig): 
         }
       }
 
+      // Fallback: handle active sessions where the agent is committing mid-turn.
+      // At this point TurnEnd hasn't fired, so stepCount/filesTouched/shadow branch
+      // may not exist yet. Use staged files as a proxy for agent work.
+      if (!hasOverlap) {
+        for (const state of sessions) {
+          if (state.phase !== 'active') continue;
+
+          try {
+            const shadowBranch = getShadowBranchName(state.baseCommit, state.worktreeID);
+            let shadowExists = await refExists(`refs/heads/${shadowBranch}`, cwd);
+
+            if (!shadowExists) {
+              const author = await getGitAuthor(cwd);
+              // Use flat name (no slashes) — mergeMetadataIntoTree can't handle nested paths
+              const metadataDir = `sessionlog-${state.sessionID}`;
+              const result = await checkpointStore.writeTemporary({
+                sessionID: state.sessionID,
+                baseCommit: state.baseCommit,
+                worktreeID: state.worktreeID,
+                modifiedFiles: stagedFiles,
+                newFiles: [],
+                deletedFiles: [],
+                metadataDir,
+                metadataDirAbs: path.resolve(cwd ?? '.', metadataDir),
+                commitMessage: formatShadowCommit(
+                  `Checkpoint: ${stagedFiles.length} file(s)`,
+                  metadataDir,
+                  state.sessionID,
+                ),
+                authorName: author.name,
+                authorEmail: author.email,
+                isFirstCheckpoint: true,
+              });
+              if (!result.skipped) {
+                shadowExists = true;
+              }
+            }
+
+            if (shadowExists) {
+              // Update session state so postCommit can process it
+              state.stepCount = Math.max(state.stepCount, 1);
+              state.filesTouched = mergeFilesTouched(state.filesTouched, stagedFiles);
+              await saveSession(state);
+              hasOverlap = true;
+              overlappingSession = state;
+              break;
+            }
+          } catch {
+            // Non-fatal
+          }
+        }
+      }
+
       if (!hasOverlap || !overlappingSession) return;
 
       // Generate or reuse checkpoint ID
