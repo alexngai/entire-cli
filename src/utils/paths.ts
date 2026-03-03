@@ -7,15 +7,19 @@
  */
 
 import * as path from 'node:path';
-import { SESSIONLOG_DIR } from '../types.js';
+
+/** All possible sessionlog directory locations (relative paths) */
+const SESSIONLOG_DIRS = ['.sessionlog', '.swarm/sessionlog'];
 
 /**
  * Returns true if the path is part of Sessionlog's infrastructure
- * (i.e., inside the `.sessionlog/` directory).
+ * (i.e., inside a `.sessionlog/` or `.swarm/sessionlog/` directory).
  */
 export function isInfrastructurePath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, '/');
-  return normalized === SESSIONLOG_DIR || normalized.startsWith(SESSIONLOG_DIR + '/');
+  return SESSIONLOG_DIRS.some(
+    (dir) => normalized === dir || normalized.startsWith(dir + '/'),
+  );
 }
 
 /**

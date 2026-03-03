@@ -10,12 +10,21 @@ import * as path from 'node:path';
 import {
   type SessionlogSettings,
   DEFAULT_SETTINGS,
-  SESSIONLOG_SETTINGS_FILE,
-  SESSIONLOG_SETTINGS_LOCAL_FILE,
-  SESSIONLOG_DIR,
 } from './types.js';
 import { getWorktreeRoot } from './git-operations.js';
 import { atomicWriteFile } from './git-operations.js';
+
+/**
+ * Resolve the sessionlog directory for a given repo root.
+ * Priority: SESSIONLOG_PROJECT_DIR env var > .swarm/sessionlog exists > .sessionlog
+ */
+export function resolveSessionlogDir(root: string): string {
+  const envDir = process.env.SESSIONLOG_PROJECT_DIR;
+  if (envDir) return path.join(root, envDir);
+  const swarmDir = path.join(root, '.swarm', 'sessionlog');
+  if (fs.existsSync(swarmDir)) return swarmDir;
+  return path.join(root, '.sessionlog');
+}
 
 // ============================================================================
 // Load Settings
@@ -31,20 +40,20 @@ export async function loadSettings(cwd?: string): Promise<SessionlogSettings> {
 }
 
 /**
- * Load project-level settings (.sessionlog/settings.json)
+ * Load project-level settings (settings.json inside resolved sessionlog dir)
  */
 export async function loadProjectSettings(cwd?: string): Promise<SessionlogSettings> {
   const root = cwd ?? (await getWorktreeRoot());
-  const settingsPath = path.join(root, SESSIONLOG_SETTINGS_FILE);
+  const settingsPath = path.join(resolveSessionlogDir(root), 'settings.json');
   return loadSettingsFile(settingsPath);
 }
 
 /**
- * Load local settings (.sessionlog/settings.local.json)
+ * Load local settings (settings.local.json inside resolved sessionlog dir)
  */
 export async function loadLocalSettings(cwd?: string): Promise<SessionlogSettings> {
   const root = cwd ?? (await getWorktreeRoot());
-  const settingsPath = path.join(root, SESSIONLOG_SETTINGS_LOCAL_FILE);
+  const settingsPath = path.join(resolveSessionlogDir(root), 'settings.local.json');
   return loadSettingsFile(settingsPath);
 }
 
@@ -82,7 +91,8 @@ export async function saveProjectSettings(
   cwd?: string,
 ): Promise<void> {
   const root = cwd ?? (await getWorktreeRoot());
-  const settingsPath = path.join(root, SESSIONLOG_SETTINGS_FILE);
+  const sessionlogDir = resolveSessionlogDir(root);
+  const settingsPath = path.join(sessionlogDir, 'settings.json');
   await ensureSessionlogDir(root);
   await atomicWriteFile(settingsPath, JSON.stringify(settings, null, 2));
 }
@@ -95,7 +105,8 @@ export async function saveLocalSettings(
   cwd?: string,
 ): Promise<void> {
   const root = cwd ?? (await getWorktreeRoot());
-  const settingsPath = path.join(root, SESSIONLOG_SETTINGS_LOCAL_FILE);
+  const sessionlogDir = resolveSessionlogDir(root);
+  const settingsPath = path.join(sessionlogDir, 'settings.local.json');
   await ensureSessionlogDir(root);
   await atomicWriteFile(settingsPath, JSON.stringify(settings, null, 2));
 }
@@ -125,7 +136,7 @@ export async function getStrategy(cwd?: string): Promise<string> {
 // ============================================================================
 
 async function ensureSessionlogDir(root: string): Promise<void> {
-  const dir = path.join(root, SESSIONLOG_DIR);
+  const dir = resolveSessionlogDir(root);
   await fs.promises.mkdir(dir, { recursive: true });
 }
 
@@ -134,7 +145,7 @@ async function ensureSessionlogDir(root: string): Promise<void> {
  */
 export async function ensureGitignore(cwd?: string): Promise<void> {
   const root = cwd ?? (await getWorktreeRoot());
-  const gitignorePath = path.join(root, SESSIONLOG_DIR, '.gitignore');
+  const gitignorePath = path.join(resolveSessionlogDir(root), '.gitignore');
 
   const content = [
     '# Sessionlog local files (not committed)',

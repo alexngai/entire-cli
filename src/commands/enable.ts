@@ -10,9 +10,6 @@ import * as path from 'node:path';
 import {
   type SessionlogSettings,
   type AgentName,
-  SESSIONLOG_DIR,
-  SESSIONLOG_METADATA_DIR,
-  SESSIONLOG_TMP_DIR,
   SESSION_DIR_NAME,
 } from '../types.js';
 import {
@@ -23,7 +20,7 @@ import {
   initSessionRepo,
   resolveSessionRepoPath,
 } from '../git-operations.js';
-import { saveProjectSettings, saveLocalSettings, ensureGitignore } from '../config.js';
+import { resolveSessionlogDir, saveProjectSettings, saveLocalSettings, ensureGitignore } from '../config.js';
 import { installGitHooks } from '../hooks/git-hooks.js';
 import { detectAgent, getAgent, listAgentNames } from '../agent/registry.js';
 import { hasHookSupport } from '../agent/types.js';
@@ -183,10 +180,11 @@ export async function enable(options: EnableOptions = {}): Promise<EnableResult>
 }
 
 async function createDirectories(root: string, cwd: string): Promise<void> {
+  const sessionlogDir = resolveSessionlogDir(root);
   const dirs = [
-    path.join(root, SESSIONLOG_DIR),
-    path.join(root, SESSIONLOG_METADATA_DIR),
-    path.join(root, SESSIONLOG_TMP_DIR),
+    sessionlogDir,
+    path.join(sessionlogDir, 'metadata'),
+    path.join(sessionlogDir, 'tmp'),
   ];
 
   // Also create .git/sessionlog-sessions/
