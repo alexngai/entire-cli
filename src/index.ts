@@ -42,6 +42,7 @@ export type {
   PromptAttribution,
   TokenUsage,
   TrackedTask,
+  TrackedSkill,
   PlanEntry,
   CheckpointID,
   Checkpoint,
